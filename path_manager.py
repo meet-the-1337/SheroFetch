@@ -1,3 +1,6 @@
+# SheroFetch — resolve and manage your music library
+# Copyright (C) 2026 meet-the-1337
+# Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
 """
 Path Manager Module - Checkpoint 5
 Authoritative directory hierarchy generator, input sanitizer, verification guard,

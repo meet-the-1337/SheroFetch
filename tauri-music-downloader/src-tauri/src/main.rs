@@ -1,3 +1,7 @@
+// SheroFetch — resolve and manage your music library
+// Copyright (C) 2026 meet-the-1337
+// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
+
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 

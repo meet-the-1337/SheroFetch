@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SheroFetch — resolve and manage your music library
+# Copyright (C) 2026 meet-the-1337
+# Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
 """
 CLI entry point for Tauri native desktop app integration.
 Executes process_song and outputs structured JSON to stdout.
