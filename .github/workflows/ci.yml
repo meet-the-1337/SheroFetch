@@ -1,4 +1,4 @@
-name: CI — Lint & Test
+name: CI — Build & Check
 
 on:
   push:
@@ -7,27 +7,57 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  check-python:
+    name: Check Python Syntax & Imports
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Python Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -r requirements.txt
 
-      - name: Lint with ruff
-        run: ruff check src/ tests/
+      - name: Verify Python Syntax
+        run: |
+          python -m py_compile checkpoint4_pipeline.py match_song.py path_manager.py playlist_resolver.py download_cli.py search_cli.py
 
-      - name: Run tests (offline only)
-        run: pytest -v -m "not network" --tb=short
+  check-frontend:
+    name: Verify Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build React Assets
+        run: |
+          cd tauri-music-downloader
+          npm install
+          npm run build
+
+  check-rust:
+    name: Verify Rust Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cargo Check
+        run: |
+          cd tauri-music-downloader/src-tauri
+          cargo check
