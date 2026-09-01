@@ -69,11 +69,15 @@ graph TD
 
 ---
 
-## 🚀 Quick Start (Linux)
+## 🚀 Quick Start
 
 ### 1. Download Pre-Built Releases
 Grab the latest release package from the [Releases Page](https://github.com/meet-the-1337/SheroFetch/releases):
 
+#### 🪟 Windows (Primary Release)
+- **[SheroFetch-Windows-x64.exe](https://github.com/meet-the-1337/SheroFetch/releases/download/v1.0.0/SheroFetch-Windows-x64.exe)** — Standalone portable 64-bit Windows executable. Simply download and double-click to run!
+
+#### 🐧 Linux
 - **Debian / Ubuntu / Linux Mint**:
   ```bash
   sudo dpkg -i sherofetch_1.0.0_amd64.deb
@@ -105,13 +109,14 @@ pip install -r requirements.txt
 
 ## 🗺️ Roadmap
 
+- [x] High-performance native Windows executable (`SheroFetch-Windows-x64.exe`)
 - [x] High-performance Tauri v2 + React desktop client for Linux (Arch & Debian)
 - [x] Multi-source acquisition: Single song, CSV batch import, and playlist links
 - [x] Lossless FLAC format selection with Soulseek P2P prioritization
 - [x] Synchronized `.lrc` lyrics showcase with atmospheric dynamic background
 - [ ] **Remote API Mode**: Headless daemon mode with REST / WebSocket API for local network control
 - [ ] **Mobile Companion App**: Android APK interface connecting to the desktop remote API
-- [ ] **Windows & macOS Binaries**: Native packaging for Windows (`.msi`) and macOS (`.dmg`)
+- [ ] **macOS DMG**: Signed native `.dmg` bundle for macOS
 
 ---
 
