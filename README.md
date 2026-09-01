@@ -1,6 +1,6 @@
-# Music Downloader (Feishin Edition)
+# SheroFetch
 
-> A modern, lightweight, cross-platform music acquisition and showcase engine built with **Tauri v2**, **Rust**, and **React**.
+> Resolve messy song/artist input into clean metadata and fetch high-quality audio for your personal library — single search, bulk lists, playlist links, or CSV import, all with a preview-before-download workflow. Built with **Tauri v2**, **Rust**, and **React** (Feishin-inspired UI).
 
 ---
 
