@@ -1,0 +1,50 @@
+# Tests archive (as requested)
+tests_archive/
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+
+# Rust & Tauri build artifacts
+tauri-music-downloader/src-tauri/target/
+**/target/
+
+# Node & Frontend dependencies
+tauri-music-downloader/node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Generated Distribution Packages
+dist-packages/
+*.deb
+*.pkg.tar.zst
+*.rpm
+*.dmg
+*.appimage
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.log
+
+# Staging & temp directories
+.staging/
+*.tmp

@@ -1,0 +1,128 @@
+name: Release — Build All Platforms
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flet CLI
+        run: pip install flet
+
+      - name: Build Linux bundle
+        run: flet build linux --project src/umi
+
+      - name: Archive Linux build
+        run: tar -czf umi-linux-x64.tar.gz -C build/linux .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umi-linux-x64
+          path: umi-linux-x64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flet CLI
+        run: pip install flet
+
+      - name: Build Windows bundle
+        run: flet build windows --project src/umi
+
+      - name: Archive Windows build
+        run: Compress-Archive -Path build/windows/* -DestinationPath umi-windows-x64.zip
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umi-windows-x64
+          path: umi-windows-x64.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flet CLI
+        run: pip install flet
+
+      - name: Build macOS bundle
+        run: flet build macos --project src/umi
+
+      - name: Archive macOS build
+        run: tar -czf umi-macos-arm64.tar.gz -C build/macos .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umi-macos-arm64
+          path: umi-macos-arm64.tar.gz
+
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Flet CLI
+        run: pip install flet
+
+      - name: Build Android APK
+        run: flet build apk --project src/umi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umi-android
+          path: build/apk/*.apk
+
+  create-release:
+    needs: [build-linux, build-windows, build-macos, build-apk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/umi-linux-x64/umi-linux-x64.tar.gz
+            dist/umi-windows-x64/umi-windows-x64.zip
+            dist/umi-macos-arm64/umi-macos-arm64.tar.gz
+            dist/umi-android/*.apk
+          generate_release_notes: true
