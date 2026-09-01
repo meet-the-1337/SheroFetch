@@ -21,6 +21,9 @@ export default function App() {
   const [coverCache, setCoverCache] = useState({})
   const [globalFilter, setGlobalFilter] = useState('')
 
+  // Audio Format Preference: 'flac' (Lossless/Soulseek) | 'mp3' (320kbps)
+  const [audioFormat, setAudioFormat] = useState('flac')
+
   // Selected Track for Showcase / Lyrics View (Image 1)
   const [showcaseTrack, setShowcaseTrack] = useState(null)
   const [showcaseTab, setShowcaseTab] = useState('lyrics') // 'lyrics' | 'details' | 'related'
@@ -217,12 +220,13 @@ export default function App() {
     const overrideAlbum = promptOverrideAlbum ? 'Unknown Album' : null
 
     try {
-      setDownloadStatus('Downloading & validating quality gates...')
+      setDownloadStatus(`Downloading ${audioFormat.toUpperCase()} & validating quality gates...`)
       const downloaded = await invoke('download_song', {
         query: queryStr,
         targetDir: saveDir,
         selectionIndex: 0,
-        overrideAlbum: overrideAlbum
+        overrideAlbum: overrideAlbum,
+        preferredFormat: audioFormat
       })
 
       setDownloadStatus('Finalizing tags & artwork...')
@@ -297,7 +301,8 @@ export default function App() {
           query: trk.query,
           targetDir: saveDir,
           selectionIndex: 0,
-          overrideAlbum: null
+          overrideAlbum: null,
+          preferredFormat: audioFormat
         })
       } catch (e) {
         console.error(`Failed to download ${trk.query}:`, e)
@@ -351,7 +356,8 @@ export default function App() {
           query: trk.query,
           targetDir: saveDir,
           selectionIndex: 0,
-          overrideAlbum: null
+          overrideAlbum: null,
+          preferredFormat: audioFormat
         })
       } catch (e) {
         console.error(`Failed to download ${trk.query}:`, e)
@@ -1224,43 +1230,75 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Install Sub-Mode Tabs */}
-              <div className="flex items-center gap-2 p-1.5 bg-slate-900/80 rounded-2xl border border-slate-800 w-fit">
-                <button
-                  onClick={() => setInstallTab('single')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                    installTab === 'single'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  <span>Song & Artist Name</span>
-                </button>
+              {/* Install Sub-Mode Tabs & Quality Format Selector */}
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2 p-1.5 bg-slate-900/80 rounded-2xl border border-slate-800 w-fit">
+                  <button
+                    onClick={() => setInstallTab('single')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      installTab === 'single'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Song & Artist Name</span>
+                  </button>
 
-                <button
-                  onClick={() => setInstallTab('csv')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                    installTab === 'csv'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>CSV File Import</span>
-                </button>
+                  <button
+                    onClick={() => setInstallTab('csv')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      installTab === 'csv'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>CSV File Import</span>
+                  </button>
 
-                <button
-                  onClick={() => setInstallTab('playlist')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                    installTab === 'playlist'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Link2 className="w-3.5 h-3.5" />
-                  <span>Playlist Link</span>
-                </button>
+                  <button
+                    onClick={() => setInstallTab('playlist')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      installTab === 'playlist'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span>Playlist Link</span>
+                  </button>
+                </div>
+
+                {/* Quality Format Toggle */}
+                <div className="flex items-center gap-1.5 p-1.5 bg-slate-900/80 rounded-2xl border border-slate-800">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Format:</span>
+                  <button
+                    type="button"
+                    onClick={() => setAudioFormat('flac')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      audioFormat === 'flac'
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>FLAC (Lossless)</span>
+                    <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.2 rounded-md font-mono font-bold">SOULSEEK</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAudioFormat('mp3')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      audioFormat === 'mp3'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>MP3 (320k)</span>
+                  </button>
+                </div>
               </div>
 
               {/* SUB-TAB 1: SONG & ARTIST NAME */}
@@ -1658,6 +1696,52 @@ export default function App() {
               <div className="text-xs text-indigo-400 font-medium">{promptTrack.artist}</div>
               <div className="text-[11px] text-slate-400">
                 Album: <span className="text-slate-200">{promptOverrideAlbum ? 'Unknown Album' : promptTrack.album}</span>
+              </div>
+            </div>
+
+            {/* Audio Quality & Format Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Audio Quality & Encoding:
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div
+                  onClick={() => !downloading && setAudioFormat('flac')}
+                  className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                    audioFormat === 'flac'
+                      ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/40 ring-1 ring-emerald-500'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-extrabold text-xs text-white">FLAC Lossless</span>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      SOULSEEK
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Bit-perfect audiophile quality via Sockseek P2P network.
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => !downloading && setAudioFormat('mp3')}
+                  className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                    audioFormat === 'mp3'
+                      ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-extrabold text-xs text-white">MP3 (320k)</span>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                      COMPACT
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    High-bitrate universal compatibility & smaller file size.
+                  </p>
+                </div>
               </div>
             </div>
 

@@ -135,8 +135,8 @@ def validate_audio_file(
     return True, "Validation passed all quality gates", metrics
 
 
-def run_sockseek_query(query_str: str, output_dir: Path, timeout_sec: int = 4) -> Optional[Path]:
-    """Execute sockseek download for a single query with strict timeout."""
+def run_sockseek_query(query_str: str, output_dir: Path, timeout_sec: int = 6, prefer_flac: bool = False) -> Optional[Path]:
+    """Execute sockseek download for a single query with strict timeout and format preference."""
     existing_files = set(output_dir.glob("*"))
     cmd = [
         "sockseek",
@@ -154,6 +154,10 @@ def run_sockseek_query(query_str: str, output_dir: Path, timeout_sec: int = 4) -
     current_files = set(output_dir.glob("*"))
     new_files = [f for f in (current_files - existing_files) if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".ogg", ".opus"]]
     if new_files:
+        if prefer_flac:
+            flac_matches = [f for f in new_files if f.suffix.lower() == ".flac"]
+            if flac_matches:
+                return sorted(flac_matches, key=lambda p: p.stat().st_size, reverse=True)[0]
         return sorted(new_files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
     return None
 
@@ -163,12 +167,14 @@ def run_ytdlp_fallback(
     track: str,
     output_dir: Path,
     expected_duration: float = 0.0,
-    timeout_sec: int = 60
+    timeout_sec: int = 60,
+    audio_format: str = "mp3"
 ) -> Optional[Path]:
-    """Execute yt-dlp fallback download targeting best audio matching duration."""
+    """Execute yt-dlp fallback download targeting best audio matching duration and requested format."""
     clean_t = normalize_text(track)
     safe_name = re.sub(r'[\\/*?:"<>|]', "", f"{artist} - {clean_t}").strip()
     out_template = str(output_dir / f"{safe_name}.%(ext)s")
+    fmt = "flac" if audio_format.lower() == "flac" else "mp3"
 
     # Strategy 1: Targeted search with duration match filter if expected_duration is known
     search_queries = [
@@ -182,7 +188,7 @@ def run_ytdlp_fallback(
             "yt-dlp",
             q,
             "-x",
-            "--audio-format", "mp3",
+            "--audio-format", fmt,
             "--audio-quality", "0",
             "--max-downloads", "1",
             "-o", out_template,
@@ -196,13 +202,12 @@ def run_ytdlp_fallback(
 
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
-            # Code 0 (success) or 101 (max-downloads reached) indicates download
-            for ext in [".mp3", ".flac", ".m4a", ".opus"]:
+            for ext in [".flac", ".mp3", ".m4a", ".opus"]:
                 candidate = output_dir / f"{safe_name}{ext}"
                 if candidate.exists() and candidate.stat().st_size > 0:
                     return candidate
             for f in output_dir.glob(f"*{clean_t}*"):
-                if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".opus"] and f.stat().st_size > 0:
+                if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus"] and f.stat().st_size > 0:
                     return f
         except Exception as e:
             logger.error(f"yt-dlp fallback error on query '{q}': {e}")
@@ -212,7 +217,7 @@ def run_ytdlp_fallback(
         "yt-dlp",
         f"ytsearch1:{artist} {clean_t}",
         "-x",
-        "--audio-format", "mp3",
+        "--audio-format", fmt,
         "--audio-quality", "0",
         "-o", out_template,
         "--no-playlist",
@@ -220,12 +225,12 @@ def run_ytdlp_fallback(
     ]
     try:
         subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=timeout_sec)
-        for ext in [".mp3", ".flac", ".m4a", ".opus"]:
+        for ext in [".flac", ".mp3", ".m4a", ".opus"]:
             candidate = output_dir / f"{safe_name}{ext}"
             if candidate.exists() and candidate.stat().st_size > 0:
                 return candidate
         for f in output_dir.glob(f"*{clean_t}*"):
-            if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".opus"] and f.stat().st_size > 0:
+            if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus"] and f.stat().st_size > 0:
                 return f
     except Exception as e:
         logger.error(f"yt-dlp unconstrained fallback error: {e}")
@@ -239,39 +244,46 @@ def download_pipeline(
     expected_duration: float,
     output_dir: Path,
     force_sockseek_fail: bool = False,
-    simulate_invalid_file: bool = False
+    simulate_invalid_file: bool = False,
+    preferred_format: str = "mp3"
 ) -> Tuple[Optional[Path], str, bool]:
     """
     Dual-engine download pipeline:
-    1. Try sockseek with 3 query variations:
-       - Variation 1: 'artist - track'
-       - Variation 2: 'artist track'
-       - Variation 3: 'track artist'
+    1. Try sockseek with query variations (including FLAC-specific queries when requested).
     2. Validate downloaded file. If invalid, discard and retry next.
-    3. If all sockseek fail, fallback to yt-dlp bestaudio.
+    3. If all sockseek fail, fallback to yt-dlp bestaudio (extracting requested format).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     clean_t = normalize_text(track)
     retried = False
+    is_flac = preferred_format.lower() == "flac"
 
-    variations = [
-        f"{artist} - {clean_t}",
-        f"{artist} {clean_t}",
-        f"{clean_t} {artist}"
-    ]
+    if is_flac:
+        variations = [
+            f"{artist} - {clean_t} flac",
+            f"{artist} {clean_t} flac",
+            f"{artist} - {clean_t}",
+            f"{clean_t} {artist}"
+        ]
+    else:
+        variations = [
+            f"{artist} - {clean_t}",
+            f"{artist} {clean_t}",
+            f"{clean_t} {artist}"
+        ]
 
-    # Stage 1: Try sockseek across 3 variations
+    # Stage 1: Try sockseek across variations
     if not force_sockseek_fail:
         for v_idx, var_query in enumerate(variations, start=1):
-            print(f"  [DOWNLOAD] Trying sockseek variation {v_idx}/3: '{var_query}'...")
+            print(f"  [DOWNLOAD] Trying sockseek variation {v_idx}/{len(variations)}: '{var_query}' (Format: {preferred_format.upper()})...")
             
             # Hook for simulating invalid file on first attempt in test
             if simulate_invalid_file and v_idx == 1:
                 dummy_path = output_dir / f"{artist} - {clean_t}.mp3"
-                dummy_path.write_bytes(b"DUMMY_AUDIO_DATA" * 1000)  # ~16 KB (< 1MB)
+                dummy_path.write_bytes(b"DUMMY_AUDIO_DATA" * 1000)
                 candidate_file = dummy_path
             else:
-                candidate_file = run_sockseek_query(var_query, output_dir, timeout_sec=4)
+                candidate_file = run_sockseek_query(var_query, output_dir, timeout_sec=6, prefer_flac=is_flac)
 
             if candidate_file and candidate_file.exists():
                 is_valid, reason, metrics = validate_audio_file(candidate_file, artist, clean_t, expected_duration)
@@ -279,14 +291,15 @@ def download_pipeline(
                 if is_valid:
                     return candidate_file, "sockseek", retried
                 else:
-                    # Discard invalid file and retry next source
                     print(f"  [VALIDATE] Discarding invalid file '{candidate_file.name}' and retrying...")
                     candidate_file.unlink(missing_ok=True)
                     retried = True
 
     # Stage 2: Fallback to yt-dlp
-    print(f"  [DOWNLOAD] Sockseek attempts exhausted/bypassed. Triggering yt-dlp bestaudio fallback...")
-    ytdlp_file = run_ytdlp_fallback(artist, clean_t, output_dir, expected_duration=expected_duration, timeout_sec=60)
+    print(f"  [DOWNLOAD] Sockseek attempts exhausted/bypassed. Triggering yt-dlp fallback ({preferred_format.upper()})...")
+    ytdlp_file = run_ytdlp_fallback(
+        artist, clean_t, output_dir, expected_duration=expected_duration, timeout_sec=60, audio_format=preferred_format
+    )
     if ytdlp_file and ytdlp_file.exists():
         is_valid, reason, metrics = validate_audio_file(ytdlp_file, artist, clean_t, expected_duration)
         print(f"  [VALIDATE] yt-dlp download check: {'PASS' if is_valid else 'FAIL'} ({reason})")
@@ -612,7 +625,8 @@ def process_song(
     output_dir: Optional[Union[str, Path]] = None,
     force_sockseek_fail: bool = False,
     simulate_invalid_file: bool = False,
-    override_album: Optional[str] = None
+    override_album: Optional[str] = None,
+    preferred_format: str = "mp3"
 ) -> Dict[str, Any]:
     """
     Execute authoritative Checkpoint 5 pipeline for a single input query:
@@ -621,12 +635,12 @@ def process_song(
     3. Resolve canonical metadata BEFORE path generation or disk writes
     4. Construct authoritative save_dir using build_path(base_dir, artist, album)
     5. Enforce verification guard (assert hierarchy & no leakage)
-    6. Download via dual engine into staging area, validate quality gates
+    6. Download via dual engine into staging area, validate quality gates (FLAC / MP3)
     7. Move finalized audio into save_dir, save cover.jpg, save .lrc, embed tags
     8. Update persistent index.json and return finalized result
     """
     print(f"\n==========================================================================================")
-    print(f"  PROCESSING: '{input_query}'")
+    print(f"  PROCESSING: '{input_query}' (Preferred Format: {preferred_format.upper()})")
     print(f"==========================================================================================")
 
     # Step 1: Search & Match
@@ -702,7 +716,7 @@ def process_song(
     print(f"[PATH] Authoritative destination: '{save_dir}'")
 
     # Step 5: Staged Download & Quality Validation
-    print(f"[DOWNLOAD] Initiating download pipeline...")
+    print(f"[DOWNLOAD] Initiating download pipeline ({preferred_format.upper()})...")
     staging_dir = Path(tempfile.mkdtemp(prefix="ckpt5_staging_"))
     try:
         staged_file, source_used, retried = download_pipeline(
@@ -711,7 +725,8 @@ def process_song(
             expected_duration=expected_duration,
             output_dir=staging_dir,
             force_sockseek_fail=force_sockseek_fail,
-            simulate_invalid_file=simulate_invalid_file
+            simulate_invalid_file=simulate_invalid_file,
+            preferred_format=preferred_format
         )
 
         if not staged_file or not staged_file.exists():
