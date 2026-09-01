@@ -1,0 +1,4 @@
+requests>=2.31
+mutagen>=1.47
+Pillow>=10.0
+flet>=0.25

@@ -1,0 +1,29 @@
+# Maintainer: Antigravity Team <contact@musicdownloader.app>
+pkgname=music-downloader-bin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Lightweight Cross-Platform Music Acquisition & Organization Engine"
+arch=('x86_64')
+url="https://musicdownloader.app"
+license=('MIT')
+depends=('python' 'python-requests' 'python-mutagen' 'python-pillow' 'yt-dlp')
+provides=('music-downloader')
+conflicts=('music-downloader')
+source=("music-downloader"
+        "music-downloader.desktop"
+        "128x128.png"
+        "download_cli.py"
+        "search_cli.py"
+        "match_song.py"
+        "path_manager.py"
+        "checkpoint4_pipeline.py")
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+package() {
+    install -Dm755 "${srcdir}/music-downloader" "${pkgdir}/usr/bin/music-downloader"
+    install -Dm644 "${srcdir}/music-downloader.desktop" "${pkgdir}/usr/share/applications/music-downloader.desktop"
+    install -Dm644 "${srcdir}/128x128.png" "${pkgdir}/usr/share/icons/hicolor/128x128/apps/music-downloader.png"
+    
+    mkdir -p "${pkgdir}/usr/share/music-downloader"
+    install -m644 "${srcdir}/"*.py "${pkgdir}/usr/share/music-downloader/"
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Music Downloader",
+  "version": "1.0.0",
+  "identifier": "com.musicdownloader.app",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Music Downloader",
+        "width": 1080,
+        "height": 720,
+        "minWidth": 360,
+        "minHeight": 500,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "category": "Audio",
+    "shortDescription": "Lightweight Cross-Platform Music Acquisition & Organization",
+    "longDescription": "High-performance native music acquisition engine with automatic metadata tagging, artwork embedding, synced lyrics, and clean folder organization.",
+    "linux": {
+      "deb": {
+        "depends": ["python3", "python3-requests", "python3-mutagen", "python3-pil"]
+      }
+    },
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      }
+    },
+    "macos": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13"
+    }
+  }
+}
