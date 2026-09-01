@@ -377,6 +377,7 @@ async fn download_song(
     target_dir: Option<String>,
     selection_index: Option<usize>,
     override_album: Option<String>,
+    preferred_format: Option<String>,
 ) -> Result<LibraryItem, String> {
     tokio::task::spawn_blocking(move || {
         let root = get_repo_root();
@@ -402,6 +403,9 @@ async fn download_song(
         }
         if let Some(ref alb) = override_album {
             cmd.arg("--override-album").arg(alb);
+        }
+        if let Some(ref fmt) = preferred_format {
+            cmd.arg("--format").arg(fmt);
         }
 
         let output = cmd.output().map_err(|e| format!("Download process failed: {}", e))?;

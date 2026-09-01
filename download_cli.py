@@ -16,13 +16,15 @@ def main():
     parser.add_argument("--base-dir", type=str, default=None, help="Base directory for music library")
     parser.add_argument("--index", type=int, default=0, help="Selection index for ambiguous mode")
     parser.add_argument("--override-album", type=str, default=None, help="Override album name for testing fallback")
+    parser.add_argument("--format", type=str, default="mp3", choices=["mp3", "flac"], help="Preferred audio format: flac or mp3")
     args = parser.parse_args()
 
     res = process_song(
         input_query=args.query,
         selection_index=args.index,
         base_dir=args.base_dir,
-        override_album=args.override_album
+        override_album=args.override_album,
+        preferred_format=args.format
     )
     print(json.dumps(res, indent=2))
 
