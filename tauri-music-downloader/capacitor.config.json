@@ -1,0 +1,14 @@
+{
+  "appId": "com.sherofetch.app",
+  "appName": "SheroFetch",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}
