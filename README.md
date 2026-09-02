@@ -75,16 +75,16 @@ graph TD
 Grab the latest release package from the [Releases Page](https://github.com/meet-the-1337/SheroFetch/releases):
 
 #### 🪟 Windows (Primary Release)
-- **[SheroFetch-Windows-x64.exe](https://github.com/meet-the-1337/SheroFetch/releases/download/v1.0.0/SheroFetch-Windows-x64.exe)** — Standalone portable 64-bit Windows executable. Simply download and double-click to run!
+- **[SheroFetch-Windows-x64.exe](https://github.com/meet-the-1337/SheroFetch/releases/download/v1.0.1/SheroFetch-Windows-x64.exe)** — Standalone portable 64-bit Windows executable. Simply download and double-click to run!
 
 #### 🐧 Linux
 - **Debian / Ubuntu / Linux Mint**:
   ```bash
-  sudo dpkg -i sherofetch_1.0.0_amd64.deb
+  sudo dpkg -i sherofetch_1.0.1_amd64.deb
   ```
 - **Arch Linux / Manjaro**:
   ```bash
-  sudo pacman -U sherofetch-bin-1.0.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U sherofetch-bin-1.0.1-1-x86_64.pkg.tar.zst
   ```
 - **Portable Linux Executable**:
   ```bash
