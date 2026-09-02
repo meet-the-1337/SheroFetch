@@ -1,7 +1,7 @@
 # SheroFetch — Full Working Premium Music Downloader & Organiser with Lyrics and Cover Image Support
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version: 2.4.1](https://img.shields.io/badge/Release-v2.4.1-emerald.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
+[![Version: 2.5.0](https://img.shields.io/badge/Release-v2.5.0-emerald.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
 [![Platform: Windows | Linux | Android](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android-indigo.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
 [![Audio: Lossless FLAC + 320k MP3](https://img.shields.io/badge/Audio-Lossless%20FLAC%20(48kHz%2F16--bit)-purple.svg)](#-audio-quality--formats)
 
@@ -14,32 +14,32 @@
 <table align="center">
   <tr>
     <td align="center" width="25%">
-      <img src="assets/screenshots/01_library_view.png" alt="Library View" />
+      <img src="assets/screenshots/poweramp_player.png" alt="Poweramp Hero Player" />
       <br />
-      <b>1. Tracks Library Vault</b>
+      <b>1. Poweramp Hero Player</b>
       <br />
-      <em>FLAC badges, synced LRC, and duration metadata</em>
+      <em>Waveform seekbar, Hi-Res badges & glow</em>
     </td>
     <td align="center" width="25%">
-      <img src="assets/screenshots/02_search_acquisition.png" alt="Search & Formats" />
+      <img src="assets/screenshots/poweramp_equalizer.png" alt="10-Band Equalizer" />
       <br />
-      <b>2. Acquisition Engine</b>
+      <b>2. 10-Band Graphic EQ</b>
       <br />
-      <em>FLAC, MP3 (320k), WAV (PCM), and M4A (AAC)</em>
+      <em>Real-time DSP, Bass Boost & presets</em>
     </td>
     <td align="center" width="25%">
-      <img src="assets/screenshots/03_playlist_link_import.png" alt="Playlist & Song Link" />
+      <img src="assets/screenshots/poweramp_library.png" alt="Categorical Library" />
       <br />
-      <b>3. Universal Link Resolver</b>
+      <b>3. Categorical Library</b>
       <br />
-      <em>Spotify, YouTube, YT Music & Apple Music</em>
+      <em>FLAC Vault, Albums, Artists & Folders</em>
     </td>
     <td align="center" width="25%">
-      <img src="assets/screenshots/04_csv_batch_import.png" alt="CSV Batch Import" />
+      <img src="assets/screenshots/poweramp_acquire.png" alt="Acquisition Engine" />
       <br />
-      <b>4. CSV Batch Engine</b>
+      <b>4. ⚡ Song Acquisition Window</b>
       <br />
-      <em>Auto-detects columns and queues batch downloads</em>
+      <em>Search, Universal Links & CSV Batch</em>
     </td>
   </tr>
 </table>
