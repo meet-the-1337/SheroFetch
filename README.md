@@ -1,7 +1,7 @@
 # SheroFetch — Full Working Premium Music Downloader & Organiser with Lyrics and Cover Image Support
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version: 2.4](https://img.shields.io/badge/Release-v2.4.0-emerald.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
+[![Version: 2.4.1](https://img.shields.io/badge/Release-v2.4.1-emerald.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
 [![Platform: Windows | Linux | Android](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android-indigo.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
 [![Audio: Lossless FLAC + 320k MP3](https://img.shields.io/badge/Audio-Lossless%20FLAC%20(48kHz%2F16--bit)-purple.svg)](#-audio-quality--formats)
 
@@ -49,16 +49,16 @@
 ## 📦 Downloads & Releases
 
 ### 🪟 Windows (x64)
-- **[SheroFetch-Windows-x64-Portable.zip](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-Windows-x64-Portable.zip)** (11.6 MB) — **Zero-prerequisite portable bundle.** Includes `SheroFetch.exe`, `WebView2Loader.dll`, embedded Python engines, and launcher script. Unzip anywhere and run immediately!
-- **[SheroFetch-Windows-x64.exe](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-Windows-x64.exe)** (21.7 MB) — Standalone single-file 64-bit Windows executable.
+- **[SheroFetch-Windows-x64-Portable.zip](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.1/SheroFetch-Windows-x64-Portable.zip)** (11.6 MB) — **Zero-prerequisite portable bundle.** Includes `SheroFetch.exe`, `WebView2Loader.dll`, embedded Python engines, and launcher script. Unzip anywhere and run immediately!
+- **[SheroFetch-Windows-x64.exe](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.1/SheroFetch-Windows-x64.exe)** (21.7 MB) — Standalone single-file 64-bit Windows executable.
 
 ### 📱 Android (Universal APK)
-- **[SheroFetch-v2.4-FLAC.apk](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-v2.4-FLAC.apk)** (4.2 MB) — **Latest on-device standalone mobile edition.** Runs completely independently on Android (tested on Samsung Galaxy S25+). Features on-device WebAssembly bit-perfect FLAC transcoding, synchronized `.lrc` lyrics, and automatic export to your phone's public `Documents/SheroFetch/Music/` folder!
-- **[SheroFetch-debug.apk](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-debug.apk)** (4.2 MB) — Developer / debug mirror.
+- **[SheroFetch-v2-FLAC.apk](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.1/SheroFetch-v2-FLAC.apk)** (4.2 MB) — **Latest on-device standalone mobile edition (v2.4.1 with "Hotel California" streaming patch).** Runs completely independently on Android (tested on Samsung Galaxy S25+). Features on-device WebAssembly bit-perfect FLAC transcoding, synchronized `.lrc` lyrics, and automatic export to your phone's public `Documents/SheroFetch/Music/` folder!
+- **[SheroFetch-debug.apk](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.1/SheroFetch-debug.apk)** (4.2 MB) — Developer / debug mirror.
 
 ### 🐧 Linux
 - **Debian / Ubuntu / Linux Mint (.deb)**:
-  - **[sherofetch_2.4_all.deb](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/sherofetch_2.4_all.deb)**
+  - **[sherofetch_2.4_all.deb](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.1/sherofetch_2.4_all.deb)**
   ```bash
   sudo dpkg -i sherofetch_2.4_all.deb
   sudo apt-get install -f
