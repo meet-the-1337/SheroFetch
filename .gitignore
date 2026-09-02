@@ -18,6 +18,8 @@ env/
 # Rust & Tauri build artifacts
 tauri-music-downloader/src-tauri/target/
 **/target/
+**/build/
+**/.gradle/
 
 # Node & Frontend dependencies
 tauri-music-downloader/node_modules/
@@ -48,3 +50,16 @@ Thumbs.db
 # Staging & temp directories
 .staging/
 *.tmp
+android-build-tmp/
+android-tools/
+build-tools_r34-windows.zip
+jre17.zip
+sockseek.zip
+sockseek.exe
+bin/sockseek.exe
+dist-releases/
+eval_dataset*.csv
+test_dataset.csv
+train_dataset.csv
+phone_screen*.png
+Poweramp*.apk

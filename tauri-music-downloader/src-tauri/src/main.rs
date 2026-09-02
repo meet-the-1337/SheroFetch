@@ -140,18 +140,45 @@ fn get_python_cmd() -> String {
         return custom;
     }
     let candidates = if cfg!(target_os = "windows") {
-        vec!["python", "py", "python3"]
+        vec!["py", "python3", "python"]
     } else {
         vec!["python3", "python"]
     };
     for cmd in candidates {
-        if let Ok(out) = new_command(cmd).arg("--version").output() {
+        if let Ok(out) = new_command(cmd).args(["-c", "import sys; print(sys.version)"]).output() {
             if out.status.success() {
-                return cmd.to_string();
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                if !stdout.trim().is_empty() {
+                    return cmd.to_string();
+                }
             }
         }
     }
-    if cfg!(target_os = "windows") { "python".to_string() } else { "python3".to_string() }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(user_home) = dirs_next() {
+            let local_app_data = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| user_home.join("AppData").join("Local"));
+            let paths = [
+                local_app_data.join("Python").join("bin").join("python.exe"),
+                local_app_data.join("Programs").join("Python").join("Python314").join("python.exe"),
+                local_app_data.join("Programs").join("Python").join("Python313").join("python.exe"),
+                local_app_data.join("Programs").join("Python").join("Python312").join("python.exe"),
+            ];
+            for p in paths {
+                if p.exists() {
+                    let s = p.to_string_lossy().to_string();
+                    if let Ok(out) = new_command(&s).args(["-c", "import sys; print(sys.version)"]).output() {
+                        if out.status.success() {
+                            return s;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if cfg!(target_os = "windows") { "py".to_string() } else { "python3".to_string() }
 }
 
 fn ensure_python_environment(py: &str) {
@@ -162,7 +189,7 @@ fn ensure_python_environment(py: &str) {
     }
 
     let test_cmd = new_command(py)
-        .args(["-c", "import requests, mutagen, PIL; print('OK')"])
+        .args(["-c", "import requests, mutagen, PIL, yt_dlp, imageio_ffmpeg; print('OK')"])
         .output();
 
     let needs_install = match test_cmd {
@@ -228,6 +255,121 @@ async fn save_config(install_dir: String) -> Result<AppConfig, String> {
         Ok(cfg)
     }).await.map_err(|e| e.to_string())?
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SoulseekProfile {
+    pub username: String,
+    pub logged_in: bool,
+    pub status: String,
+    pub config_path: String,
+    pub output_dir: String,
+    pub pref_format: String,
+}
+
+#[tauri::command]
+async fn get_soulseek_profile() -> Result<SoulseekProfile, String> {
+    tokio::task::spawn_blocking(|| {
+        let home = dirs_next().unwrap_or_else(|| PathBuf::from("."));
+        let conf_path = home.join(".config").join("sockseek").join("sockseek.conf");
+        let mut username = String::new();
+        let mut logged_in = false;
+        let mut output_dir = home.join("Music").join("Sockseek").to_string_lossy().to_string();
+        let mut pref_format = "flac,mp3".to_string();
+
+        if conf_path.exists() {
+            if let Ok(lines) = fs::read_to_string(&conf_path) {
+                for line in lines.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with('#') { continue; }
+                    if let Some((k, v)) = trimmed.split_once('=') {
+                        let k = k.trim();
+                        let v = v.trim();
+                        if k == "username" && !v.is_empty() {
+                            username = v.to_string();
+                            logged_in = true;
+                        } else if k == "output-dir" {
+                            output_dir = v.to_string();
+                        } else if k == "pref-format" {
+                            pref_format = v.to_string();
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(SoulseekProfile {
+            username,
+            logged_in,
+            status: if logged_in { "Connected (P2P Mesh Ready)".into() } else { "Not Connected".into() },
+            config_path: conf_path.to_string_lossy().to_string(),
+            output_dir,
+            pref_format,
+        })
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn save_soulseek_profile(username: String, password: Option<String>) -> Result<SoulseekProfile, String> {
+    tokio::task::spawn_blocking(move || {
+        let home = dirs_next().unwrap_or_else(|| PathBuf::from("."));
+        let conf_dir = home.join(".config").join("sockseek");
+        let _ = fs::create_dir_all(&conf_dir);
+        let conf_path = conf_dir.join("sockseek.conf");
+
+        let pass_val = password.unwrap_or_default();
+        let is_logged = !username.trim().is_empty();
+
+        let content = format!(
+r#"# Sockseek Configuration File
+username = {}
+password = {}
+output-dir = ~/Music/Sockseek
+pref-format = flac,mp3
+concurrent-jobs = 20
+concurrent-searches = 2
+concurrent-extractors = 4
+
+[lossless]
+pref-format = flac,wav
+
+[high-quality]
+pref-format = flac,mp3
+pref-min-bitrate = 320
+"#,
+            username.trim(),
+            pass_val.trim()
+        );
+
+        fs::write(&conf_path, content).map_err(|e| e.to_string())?;
+
+        Ok(SoulseekProfile {
+            username: username.trim().to_string(),
+            logged_in: is_logged,
+            status: if is_logged { "Connected (P2P Mesh Ready)".into() } else { "Not Connected".into() },
+            config_path: conf_path.to_string_lossy().to_string(),
+            output_dir: home.join("Music").join("Sockseek").to_string_lossy().to_string(),
+            pref_format: "flac,mp3".to_string(),
+        })
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn logout_soulseek_profile() -> Result<bool, String> {
+    tokio::task::spawn_blocking(|| {
+        let home = dirs_next().unwrap_or_else(|| PathBuf::from("."));
+        let conf_path = home.join(".config").join("sockseek").join("sockseek.conf");
+        if conf_path.exists() {
+            let content = r#"# Sockseek Configuration File
+# Logged out
+output-dir = ~/Music/Sockseek
+pref-format = flac,mp3
+"#;
+            let _ = fs::write(&conf_path, content);
+        }
+        Ok(true)
+    }).await.map_err(|e| e.to_string())?
+}
+
 
 #[tauri::command]
 async fn choose_folder(current_dir: Option<String>) -> Result<Option<String>, String> {
@@ -558,6 +700,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            get_soulseek_profile,
+            save_soulseek_profile,
+            logout_soulseek_profile,
             choose_folder,
             get_library,
             open_folder,
