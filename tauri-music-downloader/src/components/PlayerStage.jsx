@@ -14,6 +14,7 @@ import {
   Sliders,
   Activity,
   Sparkles,
+  Download,
   ArrowUp
 } from 'lucide-react'
 import { WaveformSeekbar } from './WaveformSeekbar'
@@ -305,10 +306,10 @@ export function PlayerStage({
 
         <button
           onClick={onOpenAcquire}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500 text-cyan-400 hover:text-black border border-cyan-500/40 text-xs font-bold transition shadow-[0_0_12px_rgba(0,229,255,0.2)]"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-400 hover:text-black border border-cyan-400/60 text-xs font-black transition shadow-[0_0_15px_rgba(0,229,255,0.35)] active:scale-95 font-mono"
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>⚡ Acquire Songs</span>
+          <Download className="w-4 h-4" />
+          <span>+ ADD SONGS</span>
         </button>
       </div>
     </div>

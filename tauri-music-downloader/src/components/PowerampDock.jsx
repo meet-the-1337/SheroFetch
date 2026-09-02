@@ -1,5 +1,5 @@
 import React from 'react'
-import { LayoutGrid, BarChart2, Search, Menu, Play, Pause } from 'lucide-react'
+import { LayoutGrid, BarChart2, Search, Download, Play, Pause } from 'lucide-react'
 
 export function PowerampDock({
   currentTrack,
@@ -78,8 +78,8 @@ export function PowerampDock({
           </div>
         </div>
 
-        {/* Lower Part: 4 Iconic Poweramp Bottom Nav Icons */}
-        <div className="flex items-center justify-around pt-1">
+        {/* Lower Part: Poweramp Nav Icons + Dedicated Add Songs Button */}
+        <div className="flex items-center justify-between px-2 pt-1">
           {/* 1. Grid (Library Categories) */}
           <button
             onClick={() => onTabChange('library')}
@@ -119,13 +119,16 @@ export function PowerampDock({
             <Search className="w-6 h-6" />
           </button>
 
-          {/* 4. Menu / Extra Features (Acquire, Settings, CSV) */}
+          {/* 4. PROMINENT ADD & DOWNLOAD SONGS BUTTON */}
           <button
             onClick={onOpenAcquire}
-            className="p-2 text-zinc-500 hover:text-white transition active:scale-95"
-            title="Acquire & Settings"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-cyan-500/20 border border-cyan-400/60 text-cyan-400 hover:bg-cyan-500 hover:text-black transition shadow-[0_0_14px_rgba(0,229,255,0.35)] active:scale-95 group"
+            title="Add & Download Songs"
           >
-            <Menu className="w-6 h-6" />
+            <Download className="w-4 h-4 group-hover:translate-y-0.5 transition" />
+            <span className="text-[11px] font-black tracking-wider uppercase font-mono">
+              Add Songs
+            </span>
           </button>
         </div>
       </div>

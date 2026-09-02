@@ -15,6 +15,7 @@ import {
   CheckSquare,
   ArrowUp,
   Sparkles,
+  Download,
   X
 } from 'lucide-react'
 
@@ -73,6 +74,13 @@ export function LibraryView({
   // ==========================================
   if (!selectedCategory) {
     const categories = [
+      {
+        id: 'acquire',
+        label: '📥 Download & Add Songs',
+        sublabel: 'Search, Spotify/YT Link, CSV Batch',
+        icon: Download,
+        color: 'bg-cyan-500 shadow-[0_0_15px_rgba(0,229,255,0.4)]'
+      },
       { id: 'all', label: 'All Songs', icon: Music, color: 'bg-blue-600' },
       { id: 'folders', label: 'Folders', icon: Folder, color: 'bg-blue-500' },
       { id: 'folders_hier', label: 'Folders Hierarchy', icon: FolderTree, color: 'bg-blue-700' },
@@ -81,21 +89,29 @@ export function LibraryView({
       { id: 'album_artists', label: 'Album Artists', icon: Mic, color: 'bg-purple-500' },
       { id: 'genres', label: 'Genres', icon: Guitar, color: 'bg-fuchsia-600' },
       { id: 'years', label: 'Years', icon: Calendar, color: 'bg-teal-600' },
-      { id: 'composers', label: 'Composers', icon: User, color: 'bg-emerald-600' },
-      { id: 'acquire', label: '⚡ Acquire Songs (SheroFetch)', icon: Sparkles, color: 'bg-cyan-500' }
+      { id: 'composers', label: 'Composers', icon: User, color: 'bg-emerald-600' }
     ]
 
     return (
       <div className="w-full h-full flex flex-col bg-[#07080b] text-white pt-10 px-4 pb-28 select-none overflow-y-auto font-sans">
-        {/* Top Header */}
+        {/* Top Header with Dedicated Add Songs Button */}
         <div className="flex justify-between items-center py-2 px-1 mb-2">
           <h1 className="text-2xl font-black tracking-tight text-white">Library</h1>
-          <button
-            onClick={onOpenAcquire}
-            className="p-2 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition"
-          >
-            <MoreVertical className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onOpenAcquire}
+              className="poweramp-pill-btn flex items-center gap-1.5 px-3.5 py-1.5 bg-cyan-500/20 border-cyan-400/60 text-cyan-400 hover:bg-cyan-500 hover:text-black transition shadow-[0_0_14px_rgba(0,229,255,0.35)] text-xs font-black font-mono tracking-wide"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>+ ADD SONGS</span>
+            </button>
+            <button
+              onClick={onOpenAcquire}
+              className="p-2 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition"
+            >
+              <MoreVertical className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         {/* Categories List */}
@@ -112,12 +128,23 @@ export function LibraryView({
                     setSelectedCategory(cat.id === 'folders_hier' ? 'folders' : cat.id)
                   }
                 }}
-                className="flex items-center gap-4 p-2 rounded-2xl hover:bg-white/5 cursor-pointer transition active:scale-[0.99]"
+                className={`flex items-center gap-4 p-2.5 rounded-2xl hover:bg-white/5 cursor-pointer transition active:scale-[0.99] ${
+                  cat.id === 'acquire' ? 'bg-cyan-500/10 border border-cyan-500/30' : ''
+                }`}
               >
                 <div className={`w-11 h-11 rounded-full ${cat.color} flex items-center justify-center text-white shadow-lg flex-shrink-0`}>
                   <Icon className="w-6 h-6" />
                 </div>
-                <span className="text-base font-bold text-white tracking-wide">{cat.label}</span>
+                <div className="flex flex-col">
+                  <span className={`text-base font-bold tracking-wide ${cat.id === 'acquire' ? 'text-cyan-400' : 'text-white'}`}>
+                    {cat.label}
+                  </span>
+                  {cat.sublabel && (
+                    <span className="text-[11px] text-zinc-400 font-medium">
+                      {cat.sublabel}
+                    </span>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -186,6 +213,14 @@ export function LibraryView({
 
           <button className="poweramp-pill-btn px-4 py-2 text-xs font-bold text-white">
             Select
+          </button>
+
+          <button
+            onClick={onOpenAcquire}
+            className="poweramp-pill-btn flex items-center gap-1 px-3 py-2 text-xs font-bold text-cyan-400 bg-cyan-500/10 border-cyan-400/40"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Add</span>
           </button>
 
           <div className="flex-1" />
@@ -307,6 +342,14 @@ export function LibraryView({
 
         <button className="poweramp-pill-btn px-4 py-2 text-xs font-bold text-white">
           Select
+        </button>
+
+        <button
+          onClick={onOpenAcquire}
+          className="poweramp-pill-btn flex items-center gap-1 px-3 py-2 text-xs font-bold text-cyan-400 bg-cyan-500/10 border-cyan-400/40"
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>Add</span>
         </button>
 
         <div className="flex-1" />
