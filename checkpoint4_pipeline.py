@@ -111,9 +111,10 @@ def validate_audio_file(
     if file_size_bytes <= 1024 * 1024:
         return False, f"File size ({file_size_mb} MB) <= 1MB threshold", metrics
 
-    # Gate 2: Duration tolerance <= 2s
-    if expected_duration > 0 and dur_diff > 2.0:
-        return False, f"Duration diff ({dur_diff}s) exceeds ±2.0s tolerance (actual: {actual_duration}s, expected: {expected_duration}s)", metrics
+    # Gate 2: Duration tolerance (relaxed for YouTube/P2P matching: ±10.0s or 8%)
+    max_tolerance = max(10.0, expected_duration * 0.08)
+    if expected_duration > 0 and actual_duration > 0 and dur_diff > max_tolerance:
+        return False, f"Duration diff ({dur_diff}s) exceeds ±{max_tolerance:.1f}s tolerance (actual: {actual_duration}s, expected: {expected_duration}s)", metrics
 
     # Gate 3: Filename contains artist or track
     fn_lower = file_path.name.lower()
@@ -138,8 +139,41 @@ def validate_audio_file(
     return True, "Validation passed all quality gates", metrics
 
 
+def get_subprocess_kwargs() -> Dict[str, Any]:
+    """Return subprocess kwargs with console window suppression on Windows."""
+    kwargs: Dict[str, Any] = {"capture_output": True, "text": True}
+    if os.name == "nt":
+        # 0x08000000 = CREATE_NO_WINDOW: completely hides cmd console popup
+        kwargs["creationflags"] = 0x08000000
+    return kwargs
+
+
+def get_ytdlp_cmd() -> List[str]:
+    """Resolve yt-dlp executable or fallback to python -m yt_dlp."""
+    if shutil.which("yt-dlp"):
+        return ["yt-dlp"]
+    return [sys.executable, "-m", "yt_dlp"]
+
+
+def get_ffmpeg_path() -> Optional[str]:
+    """Find system ffmpeg or imageio_ffmpeg bundled binary."""
+    if shutil.which("ffmpeg"):
+        return "ffmpeg"
+    try:
+        import imageio_ffmpeg
+        p = imageio_ffmpeg.get_ffmpeg_exe()
+        if p and os.path.exists(p):
+            return p
+    except Exception:
+        pass
+    return None
+
+
 def run_sockseek_query(query_str: str, output_dir: Path, timeout_sec: int = 6, prefer_flac: bool = False) -> Optional[Path]:
     """Execute sockseek download for a single query with strict timeout and format preference."""
+    if shutil.which("sockseek") is None:
+        return None
+
     existing_files = set(output_dir.glob("*"))
     cmd = [
         "sockseek",
@@ -148,14 +182,21 @@ def run_sockseek_query(query_str: str, output_dir: Path, timeout_sec: int = 6, p
         "-o", str(output_dir),
         "--no-progress"
     ]
+    # Check for Soulseek credentials in environment
+    u = os.environ.get("SOULSEEK_USERNAME")
+    p = os.environ.get("SOULSEEK_PASSWORD")
+    if u and p:
+        cmd.extend(["-u", u, "-p", p])
+
+    kwargs = get_subprocess_kwargs()
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
+        subprocess.run(cmd, timeout=timeout_sec, **kwargs)
     except (subprocess.TimeoutExpired, Exception):
         pass
 
     # Detect newly created audio files
     current_files = set(output_dir.glob("*"))
-    new_files = [f for f in (current_files - existing_files) if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".ogg", ".opus"]]
+    new_files = [f for f in (current_files - existing_files) if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".ogg", ".opus", ".webm"]]
     if new_files:
         if prefer_flac:
             flac_matches = [f for f in new_files if f.suffix.lower() == ".flac"]
@@ -179,61 +220,74 @@ def run_ytdlp_fallback(
     out_template = str(output_dir / f"{safe_name}.%(ext)s")
     fmt = "flac" if audio_format.lower() == "flac" else "mp3"
 
+    ytdlp_base = get_ytdlp_cmd()
+    ffmpeg_exe = get_ffmpeg_path()
+    kwargs = get_subprocess_kwargs()
+
+    if ffmpeg_exe:
+        audio_args = [
+            "--ffmpeg-location", ffmpeg_exe,
+            "-x",
+            "--audio-format", fmt,
+            "--audio-quality", "0"
+        ]
+    else:
+        # If ffmpeg is absent, download direct high quality audio stream (m4a/aac) without transcoding
+        audio_args = [
+            "-f", "ba[ext=m4a]/ba/b"
+        ]
+
     # Strategy 1: Targeted search with duration match filter if expected_duration is known
     search_queries = [
+        f"ytsearch5:{artist} {clean_t} official audio",
         f"ytsearch5:{artist} {clean_t}",
-        f"ytsearch3:{artist} - {clean_t} official audio",
         f"ytsearch3:{clean_t} {artist}"
     ]
 
     for q in search_queries:
         cmd = [
-            "yt-dlp",
+            *ytdlp_base,
             q,
-            "-x",
-            "--audio-format", fmt,
-            "--audio-quality", "0",
+            *audio_args,
             "--max-downloads", "1",
             "-o", out_template,
             "--no-playlist",
             "--quiet"
         ]
         if expected_duration > 0:
-            min_dur = max(10, int(expected_duration - 2))
-            max_dur = int(expected_duration + 2)
+            min_dur = max(10, int(expected_duration - 10))
+            max_dur = int(expected_duration + 10)
             cmd.extend(["--match-filter", f"duration >= {min_dur} & duration <= {max_dur}"])
 
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
-            for ext in [".flac", ".mp3", ".m4a", ".opus"]:
+            subprocess.run(cmd, timeout=timeout_sec, **kwargs)
+            for ext in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"]:
                 candidate = output_dir / f"{safe_name}{ext}"
-                if candidate.exists() and candidate.stat().st_size > 0:
+                if candidate.exists() and candidate.stat().st_size > 1024 * 100:
                     return candidate
             for f in output_dir.glob(f"*{clean_t}*"):
-                if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus"] and f.stat().st_size > 0:
+                if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"] and f.stat().st_size > 1024 * 100:
                     return f
         except Exception as e:
             logger.error(f"yt-dlp fallback error on query '{q}': {e}")
 
     # Strategy 2: Unconstrained search fallback if match-filter didn't catch anything
     cmd_fallback = [
-        "yt-dlp",
+        *ytdlp_base,
         f"ytsearch1:{artist} {clean_t}",
-        "-x",
-        "--audio-format", fmt,
-        "--audio-quality", "0",
+        *audio_args,
         "-o", out_template,
         "--no-playlist",
         "--quiet"
     ]
     try:
-        subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=timeout_sec)
-        for ext in [".flac", ".mp3", ".m4a", ".opus"]:
+        subprocess.run(cmd_fallback, timeout=timeout_sec, **kwargs)
+        for ext in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"]:
             candidate = output_dir / f"{safe_name}{ext}"
-            if candidate.exists() and candidate.stat().st_size > 0:
+            if candidate.exists() and candidate.stat().st_size > 1024 * 100:
                 return candidate
         for f in output_dir.glob(f"*{clean_t}*"):
-            if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus"] and f.stat().st_size > 0:
+            if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"] and f.stat().st_size > 1024 * 100:
                 return f
     except Exception as e:
         logger.error(f"yt-dlp unconstrained fallback error: {e}")
@@ -570,6 +624,37 @@ def embed_tags_into_audio(
                 cover_embedded = True
             audio.save()
             tags_embedded = True
+
+        elif ext in [".m4a", ".mp4"]:
+            from mutagen.mp4 import MP4, MP4Cover
+            audio = MP4(str(file_path))
+            audio["\xa9nam"] = [title]
+            audio["\xa9ART"] = [artist]
+            audio["\xa9alb"] = [album]
+            audio["\xa9day"] = [year]
+            if lyrics_content:
+                audio["\xa9lyr"] = [lyrics_content]
+            if cover_bytes:
+                audio["covr"] = [MP4Cover(cover_bytes, imageformat=MP4Cover.FORMAT_JPEG)]
+                cover_embedded = True
+            audio.save()
+            tags_embedded = True
+
+        elif ext in [".ogg", ".opus"]:
+            from mutagen.oggopus import OggOpus
+            from mutagen.oggvorbis import OggVorbis
+            try:
+                audio = OggOpus(str(file_path)) if ext == ".opus" else OggVorbis(str(file_path))
+                audio["title"] = [title]
+                audio["artist"] = [artist]
+                audio["album"] = [album]
+                audio["date"] = [year]
+                if lyrics_content:
+                    audio["lyrics"] = [lyrics_content]
+                audio.save()
+                tags_embedded = True
+            except Exception:
+                pass
 
     except Exception as e:
         logger.error(f"Error embedding tags into {file_path}: {e}")
