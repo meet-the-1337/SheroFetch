@@ -15,6 +15,7 @@ Implements:
 
 import io
 import os
+import sys
 import re
 import time
 import shutil
@@ -81,13 +82,15 @@ def validate_audio_file(
     file_path: Path,
     artist: str,
     track: str,
-    expected_duration: float = 0.0
+    expected_duration: float = 0.0,
+    expected_format: Optional[str] = None
 ) -> Tuple[bool, str, Dict[str, Any]]:
     """
     Quality gate validation:
-    1. File size > 1MB (1,048,576 bytes)
-    2. Duration difference <= 2.0 seconds (if expected_duration > 0)
-    3. Filename contains artist or track (case-insensitive substring)
+    1. Strict format check: No .webm or video containers; matches expected_format
+    2. File size > 1MB (1,048,576 bytes)
+    3. Duration difference <= tolerance (if expected_duration > 0)
+    4. Filename contains artist or track (case-insensitive substring)
 
     If any fails, file is discarded.
     """
@@ -107,12 +110,22 @@ def validate_audio_file(
         "filename": file_path.name
     }
 
+    # Gate 0: Strict format check — reject .webm and ensure requested format
+    ext = file_path.suffix.lower()
+    if ext in [".webm", ".mkv", ".mp4", ".part", ".ytdl"]:
+        return False, f"Raw video/stream container '{ext}' is not a valid music format", metrics
+
+    if expected_format:
+        req_ext = f".{expected_format.lower()}"
+        if ext != req_ext:
+            return False, f"Downloaded format '{ext}' does not match requested format '{req_ext}'", metrics
+
     # Gate 1: File size > 1MB
     if file_size_bytes <= 1024 * 1024:
         return False, f"File size ({file_size_mb} MB) <= 1MB threshold", metrics
 
-    # Gate 2: Duration tolerance (relaxed for YouTube/P2P matching: ±10.0s or 8%)
-    max_tolerance = max(10.0, expected_duration * 0.08)
+    # Gate 2: Duration tolerance (relaxed for radio edit vs album version vs P2P: ±90.0s or 40%)
+    max_tolerance = max(90.0, expected_duration * 0.40)
     if expected_duration > 0 and actual_duration > 0 and dur_diff > max_tolerance:
         return False, f"Duration diff ({dur_diff}s) exceeds ±{max_tolerance:.1f}s tolerance (actual: {actual_duration}s, expected: {expected_duration}s)", metrics
 
@@ -156,37 +169,51 @@ def get_ytdlp_cmd() -> List[str]:
 
 
 def get_ffmpeg_path() -> Optional[str]:
-    """Find system ffmpeg or imageio_ffmpeg bundled binary."""
-    if shutil.which("ffmpeg"):
-        return "ffmpeg"
+    """Find system ffmpeg or imageio_ffmpeg bundled binary with absolute path."""
+    p = shutil.which("ffmpeg")
+    if p:
+        return str(Path(p).resolve())
     try:
         import imageio_ffmpeg
         p = imageio_ffmpeg.get_ffmpeg_exe()
         if p and os.path.exists(p):
-            return p
+            return str(Path(p).resolve())
     except Exception:
         pass
     return None
 
 
-def run_sockseek_query(query_str: str, output_dir: Path, timeout_sec: int = 6, prefer_flac: bool = False) -> Optional[Path]:
-    """Execute sockseek download for a single query with strict timeout and format preference."""
+def run_sockseek_query(
+    query_str: str,
+    output_dir: Path,
+    timeout_sec: int = 25,
+    prefer_flac: bool = False,
+    audio_format: str = "mp3"
+) -> Optional[Path]:
+    """Execute sockseek download for a single query with robust P2P timeout and format preference."""
     if shutil.which("sockseek") is None:
         return None
 
     existing_files = set(output_dir.glob("*"))
     cmd = [
         "sockseek",
-        query_str,
-        "-s",
+        "-s", query_str,
         "-o", str(output_dir),
+        "--search-timeout", "15000",
+        "-d",
+        "--length-tol=-1",
         "--no-progress"
     ]
+    if audio_format.lower() == "flac" or prefer_flac:
+        cmd.extend(["--pref-format", "flac"])
+    elif audio_format.lower() in ["mp3", "m4a", "wav"]:
+        cmd.extend(["--pref-format", audio_format.lower()])
+
     # Check for Soulseek credentials in environment
-    u = os.environ.get("SOULSEEK_USERNAME")
-    p = os.environ.get("SOULSEEK_PASSWORD")
+    u = os.environ.get("SOULSEEK_USERNAME", "manansingahl")
+    p = os.environ.get("SOULSEEK_PASSWORD", "manansinghal77")
     if u and p:
-        cmd.extend(["-u", u, "-p", p])
+        cmd.extend(["--user", u, "--pass", p])
 
     kwargs = get_subprocess_kwargs()
     try:
@@ -194,14 +221,14 @@ def run_sockseek_query(query_str: str, output_dir: Path, timeout_sec: int = 6, p
     except (subprocess.TimeoutExpired, Exception):
         pass
 
-    # Detect newly created audio files
+    # Detect newly created audio files (NEVER accept webm)
     current_files = set(output_dir.glob("*"))
-    new_files = [f for f in (current_files - existing_files) if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".ogg", ".opus", ".webm"]]
+    new_files = [f for f in (current_files - existing_files) if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".wav", ".ogg", ".opus"]]
     if new_files:
-        if prefer_flac:
-            flac_matches = [f for f in new_files if f.suffix.lower() == ".flac"]
-            if flac_matches:
-                return sorted(flac_matches, key=lambda p: p.stat().st_size, reverse=True)[0]
+        req_ext = f".{audio_format.lower()}"
+        exact_matches = [f for f in new_files if f.suffix.lower() == req_ext]
+        if exact_matches:
+            return sorted(exact_matches, key=lambda p: p.stat().st_size, reverse=True)[0]
         return sorted(new_files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
     return None
 
@@ -218,30 +245,33 @@ def run_ytdlp_fallback(
     clean_t = normalize_text(track)
     safe_name = re.sub(r'[\\/*?:"<>|]', "", f"{artist} - {clean_t}").strip()
     out_template = str(output_dir / f"{safe_name}.%(ext)s")
-    fmt = "flac" if audio_format.lower() == "flac" else "mp3"
+    
+    fmt = audio_format.lower()
+    if fmt not in ["flac", "mp3", "wav", "m4a", "opus"]:
+        fmt = "mp3"
+    target_ext = f".{fmt}"
 
     ytdlp_base = get_ytdlp_cmd()
     ffmpeg_exe = get_ffmpeg_path()
     kwargs = get_subprocess_kwargs()
 
-    if ffmpeg_exe:
-        audio_args = [
-            "--ffmpeg-location", ffmpeg_exe,
-            "-x",
-            "--audio-format", fmt,
-            "--audio-quality", "0"
-        ]
-    else:
-        # If ffmpeg is absent, download direct high quality audio stream (m4a/aac) without transcoding
-        audio_args = [
-            "-f", "ba[ext=m4a]/ba/b"
-        ]
+    if not ffmpeg_exe:
+        logger.warning("ffmpeg is not found on system. Transcoding to requested format is unavailable.")
+        return None
 
-    # Strategy 1: Targeted search with duration match filter if expected_duration is known
+    audio_args = [
+        "-f", "ba[ext=m4a]/ba[ext=mp3]/ba",
+        "--ffmpeg-location", ffmpeg_exe,
+        "-x",
+        "--audio-format", fmt,
+        "--audio-quality", "0"
+    ]
+
+    # Search queries
     search_queries = [
-        f"ytsearch5:{artist} {clean_t} official audio",
-        f"ytsearch5:{artist} {clean_t}",
-        f"ytsearch3:{clean_t} {artist}"
+        f"ytsearch3:{artist} {clean_t} official audio",
+        f"ytsearch3:{artist} {clean_t}",
+        f"ytsearch1:{clean_t} {artist}"
     ]
 
     for q in search_queries:
@@ -255,23 +285,28 @@ def run_ytdlp_fallback(
             "--quiet"
         ]
         if expected_duration > 0:
-            min_dur = max(10, int(expected_duration - 10))
-            max_dur = int(expected_duration + 10)
+            min_dur = max(30, int(expected_duration - 90))
+            max_dur = int(expected_duration + 120)
             cmd.extend(["--match-filter", f"duration >= {min_dur} & duration <= {max_dur}"])
 
         try:
             subprocess.run(cmd, timeout=timeout_sec, **kwargs)
-            for ext in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"]:
-                candidate = output_dir / f"{safe_name}{ext}"
-                if candidate.exists() and candidate.stat().st_size > 1024 * 100:
-                    return candidate
-            for f in output_dir.glob(f"*{clean_t}*"):
-                if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"] and f.stat().st_size > 1024 * 100:
+            # Delete any raw webm containers so they NEVER get picked up
+            for w in output_dir.glob("*.webm"):
+                w.unlink(missing_ok=True)
+            for w in output_dir.glob("*.part"):
+                w.unlink(missing_ok=True)
+
+            candidate = output_dir / f"{safe_name}{target_ext}"
+            if candidate.exists() and candidate.stat().st_size > 1024 * 100:
+                return candidate
+            for f in output_dir.glob(f"*{clean_t}*{target_ext}"):
+                if f.stat().st_size > 1024 * 100:
                     return f
         except Exception as e:
             logger.error(f"yt-dlp fallback error on query '{q}': {e}")
 
-    # Strategy 2: Unconstrained search fallback if match-filter didn't catch anything
+    # Final unconstrained search fallback
     cmd_fallback = [
         *ytdlp_base,
         f"ytsearch1:{artist} {clean_t}",
@@ -282,12 +317,17 @@ def run_ytdlp_fallback(
     ]
     try:
         subprocess.run(cmd_fallback, timeout=timeout_sec, **kwargs)
-        for ext in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"]:
-            candidate = output_dir / f"{safe_name}{ext}"
-            if candidate.exists() and candidate.stat().st_size > 1024 * 100:
-                return candidate
-        for f in output_dir.glob(f"*{clean_t}*"):
-            if f.suffix.lower() in [".flac", ".mp3", ".m4a", ".opus", ".webm", ".ogg"] and f.stat().st_size > 1024 * 100:
+        # Purge any leftover webm files
+        for w in output_dir.glob("*.webm"):
+            w.unlink(missing_ok=True)
+        for w in output_dir.glob("*.part"):
+            w.unlink(missing_ok=True)
+
+        candidate = output_dir / f"{safe_name}{target_ext}"
+        if candidate.exists() and candidate.stat().st_size > 1024 * 100:
+            return candidate
+        for f in output_dir.glob(f"*{clean_t}*{target_ext}"):
+            if f.stat().st_size > 1024 * 100:
                 return f
     except Exception as e:
         logger.error(f"yt-dlp unconstrained fallback error: {e}")
@@ -308,7 +348,7 @@ def download_pipeline(
     Dual-engine download pipeline:
     1. Try sockseek with query variations (including FLAC-specific queries when requested).
     2. Validate downloaded file. If invalid, discard and retry next.
-    3. If all sockseek fail, fallback to yt-dlp bestaudio (extracting requested format).
+    3. If all sockseek fail, fallback to yt-dlp extracting requested format.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     clean_t = normalize_text(track)
@@ -340,10 +380,10 @@ def download_pipeline(
                 dummy_path.write_bytes(b"DUMMY_AUDIO_DATA" * 1000)
                 candidate_file = dummy_path
             else:
-                candidate_file = run_sockseek_query(var_query, output_dir, timeout_sec=6, prefer_flac=is_flac)
+                candidate_file = run_sockseek_query(var_query, output_dir, timeout_sec=20, prefer_flac=is_flac, audio_format=preferred_format)
 
             if candidate_file and candidate_file.exists():
-                is_valid, reason, metrics = validate_audio_file(candidate_file, artist, clean_t, expected_duration)
+                is_valid, reason, metrics = validate_audio_file(candidate_file, artist, clean_t, expected_duration, expected_format=preferred_format)
                 print(f"  [VALIDATE] Sockseek download check: {'PASS' if is_valid else 'FAIL'} ({reason})")
                 if is_valid:
                     return candidate_file, "sockseek", retried
@@ -358,13 +398,15 @@ def download_pipeline(
         artist, clean_t, output_dir, expected_duration=expected_duration, timeout_sec=60, audio_format=preferred_format
     )
     if ytdlp_file and ytdlp_file.exists():
-        is_valid, reason, metrics = validate_audio_file(ytdlp_file, artist, clean_t, expected_duration)
+        is_valid, reason, metrics = validate_audio_file(ytdlp_file, artist, clean_t, expected_duration, expected_format=preferred_format)
         print(f"  [VALIDATE] yt-dlp download check: {'PASS' if is_valid else 'FAIL'} ({reason})")
         if is_valid:
             return ytdlp_file, "yt-dlp", retried
         else:
             print(f"  [VALIDATE] Discarding invalid yt-dlp file '{ytdlp_file.name}'")
             ytdlp_file.unlink(missing_ok=True)
+
+    return None, "none", retried
 
     return None, "none", retried
 
@@ -818,31 +860,33 @@ def process_song(
         )
 
         if not staged_file or not staged_file.exists():
-            print(f"[DOWNLOAD] FAILED: All download sources failed or were rejected for '{canonical_artist} - {track}'")
+            print(f"[DOWNLOAD] FAILED: All download sources failed or were rejected for '{canonical_artist} - {track}' (Format: {preferred_format.upper()})")
             return {
                 "status": "failed",
-                "reason": "All download sources failed or were rejected",
+                "reason": f"Unable to download '{canonical_artist} - {track}' in {preferred_format.upper()} format. The requested format could not be retrieved from available sources.",
                 "input": input_query,
                 "artist": canonical_artist,
                 "track": track,
-                "mbid": mbid
+                "mbid": mbid,
+                "format": preferred_format.upper()
             }
 
         print(f"[DOWNLOAD] SUCCESS: Retrieved file '{staged_file.name}' via source: {source_used}")
 
-        # Quality Gate Validation
+        # Quality Gate Validation (enforce requested format)
         is_valid, val_reason, val_metrics = validate_audio_file(
-            staged_file, canonical_artist, track, expected_duration
+            staged_file, canonical_artist, track, expected_duration, expected_format=preferred_format
         )
         print(f"[VALIDATE] Final Validation: {'PASS' if is_valid else 'FAIL'} ({val_reason})")
 
         if not is_valid:
             return {
                 "status": "failed",
-                "reason": f"Validation failed: {val_reason}",
+                "reason": f"Downloaded file failed validation: {val_reason}",
                 "input": input_query,
                 "artist": canonical_artist,
-                "track": track
+                "track": track,
+                "format": preferred_format.upper()
             }
 
         # Step 6: Move validated audio into authoritative save_dir

@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Optional, Union, Tuple, List, Dict, Any
 
 DEFAULT_BASE_DIR = Path.home() / "Music" / "MusicDownloader"
-DEFAULT_CONFIG_DIR = Path.home() / ".config" / "music_downloader"
+if os.name == "nt":
+    _appdata = os.environ.get("APPDATA")
+    DEFAULT_CONFIG_DIR = (Path(_appdata) if _appdata else Path.home() / "AppData" / "Roaming") / "music_downloader"
+else:
+    DEFAULT_CONFIG_DIR = Path.home() / ".config" / "music_downloader"
 DEFAULT_INDEX_FILE = DEFAULT_CONFIG_DIR / "index.json"
 
 

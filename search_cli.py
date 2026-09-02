@@ -30,7 +30,7 @@ def search_query(query: str):
             "estimated_mp3_mb": round(dur * 0.04, 1),
             "estimated_wav_mb": round(dur * 0.16, 1),
             "confidence": item.get("confidence", 0.9),
-            "cover_url": f"https://coverartarchive.org/release-group/{mbid}/front-250" if mbid else None,
+            "cover_url": item.get("cover_url") or (f"https://coverartarchive.org/release-group/{mbid}/front-250" if mbid else None),
             "resolved": True,
         })
 

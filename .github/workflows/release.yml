@@ -40,10 +40,11 @@ jobs:
       - name: Stage Windows Executable and Portable Bundle
         run: |
           New-Item -ItemType Directory -Force -Path dist-windows/engine
+          Copy-Item tauri-music-downloader/src-tauri/target/release/music-downloader.exe dist-windows/SheroFetch-Windows-x64.exe
           Copy-Item tauri-music-downloader/src-tauri/target/release/music-downloader.exe dist-windows/SheroFetch.exe
           Copy-Item *.py dist-windows/engine/
           Copy-Item requirements.txt dist-windows/
-          Compress-Archive -Path dist-windows/* -DestinationPath dist-windows/SheroFetch-Windows-x64.zip
+          Compress-Archive -Path dist-windows/* -DestinationPath dist-windows/SheroFetch-Windows-x64-Portable.zip
         shell: pwsh
 
       - name: Upload Windows Artifact
@@ -51,8 +52,8 @@ jobs:
         with:
           name: windows-release
           path: |
-            dist-windows/SheroFetch.exe
-            dist-windows/SheroFetch-Windows-x64.zip
+            dist-windows/SheroFetch-Windows-x64.exe
+            dist-windows/SheroFetch-Windows-x64-Portable.zip
 
   build-linux:
     name: Build Linux Executable
@@ -84,24 +85,29 @@ jobs:
           cd tauri-music-downloader/src-tauri
           cargo build --release
 
-      - name: Stage Linux Executable
+      - name: Stage Linux Executable and Deb Package
         run: |
           mkdir -p dist-linux
           cp tauri-music-downloader/src-tauri/target/release/music-downloader dist-linux/sherofetch-linux-x86_64
           chmod +x dist-linux/sherofetch-linux-x86_64
+          python3 packaging/package_deb.sh || true
+          cp dist-packages/*.deb dist-linux/ || true
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-release
-          path: dist-linux/sherofetch-linux-x86_64
+          path: dist-linux/*
 
   publish-release:
     name: Publish Release Assets
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
         with:
           path: release-artifacts
 
@@ -109,9 +115,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.2' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.4.0' }}
           files: |
-            release-artifacts/windows-release/SheroFetch.exe
-            release-artifacts/windows-release/SheroFetch-Windows-x64.zip
-            release-artifacts/linux-release/sherofetch-linux-x86_64
+            release-artifacts/windows-release/SheroFetch-Windows-x64.exe
+            release-artifacts/windows-release/SheroFetch-Windows-x64-Portable.zip
+            release-artifacts/linux-release/*
+            SheroFetch-v2-FLAC.apk
+            SheroFetch-debug.apk
           generate_release_notes: true
