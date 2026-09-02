@@ -1,131 +1,197 @@
-# SheroFetch
+# SheroFetch — Full Working Premium Music Downloader & Organiser with Lyrics and Cover Image Support
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Platform: Linux](https://img.shields.io/badge/Platform-Linux%20(Debian%20%7C%20Arch)-orange.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
-[![Build: Tauri v2](https://img.shields.io/badge/Desktop-Tauri%20v2%20%2B%20Rust-6366f1.svg)](https://tauri.app)
+[![Version: 2.4](https://img.shields.io/badge/Release-v2.4.0-emerald.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
+[![Platform: Windows | Linux | Android](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android-indigo.svg)](https://github.com/meet-the-1337/SheroFetch/releases)
+[![Audio: Lossless FLAC + 320k MP3](https://img.shields.io/badge/Audio-Lossless%20FLAC%20(48kHz%2F16--bit)-purple.svg)](#-audio-quality--formats)
 
-> Resolve messy song/artist input into clean metadata and fetch high-quality audio for your personal library — single search, bulk lists, playlist links, or CSV import, all with a preview-before-download workflow.
-
----
-
-## ⚖️ Legal & Scope Disclaimer
-
-**SheroFetch is a media organization and metadata resolution utility created exclusively for personal library management.** This project does not host, mirror, cache, or distribute any copyrighted media files. It is intended solely for archiving content that users have the explicit legal right to download (e.g., Creative Commons, public domain works, artist-authorized content, or personal archival backups where permissible by law). Users bear full responsibility for ensuring their usage complies with all applicable local copyright laws and the Terms of Service of any external network services accessed.
+> **SheroFetch** is an ultra-fast, standalone, zero-bloat music acquisition, organization, and metadata enrichment suite. Built for Windows, Linux, and Android, it turns messy song links, playlist URLs, or raw CSV text into a structured, bit-perfect lossless library with embedded tags, cover art, and synchronized lyrics.
 
 ---
 
-## 💡 Why This Exists
+## 📸 Visual Showcase & Snapshots
 
-Downloading music traditionally results in cluttered folders: ambiguous file names, missing album tags, blurry or missing cover artwork, out-of-sync lyrics, and inconsistent directory layouts.
-
-**SheroFetch solves the "messy input → structured library" pipeline:**
-1. You provide imperfect input: a track query, a pasted CSV list, or a public playlist URL.
-2. The engine resolves canonical metadata via **MusicBrainz** and verifies duration and releases before touching disk.
-3. Audio is acquired in bit-perfect **FLAC Lossless** (or 320kbps MP3) through dual-engine fallback with strict quality validation gates ($\le 2.0$s tolerance, $> 1$MB).
-4. Files are deterministically organized into an authoritative hierarchy: `~/Music/MusicDownloader/{Artist}/{Album}/`, fully enriched with embedded tags, $\ge 1000$px cover art, and synchronized `.lrc` lyrics.
+<table align="center">
+  <tr>
+    <td align="center" width="25%">
+      <img src="assets/screenshots/01_library_view.png" alt="Library View" />
+      <br />
+      <b>1. Tracks Library Vault</b>
+      <br />
+      <em>FLAC badges, synced LRC, and duration metadata</em>
+    </td>
+    <td align="center" width="25%">
+      <img src="assets/screenshots/02_search_acquisition.png" alt="Search & Formats" />
+      <br />
+      <b>2. Acquisition Engine</b>
+      <br />
+      <em>FLAC, MP3 (320k), WAV (PCM), and M4A (AAC)</em>
+    </td>
+    <td align="center" width="25%">
+      <img src="assets/screenshots/03_playlist_link_import.png" alt="Playlist & Song Link" />
+      <br />
+      <b>3. Universal Link Resolver</b>
+      <br />
+      <em>Spotify, YouTube, YT Music & Apple Music</em>
+    </td>
+    <td align="center" width="25%">
+      <img src="assets/screenshots/04_csv_batch_import.png" alt="CSV Batch Import" />
+      <br />
+      <b>4. CSV Batch Engine</b>
+      <br />
+      <em>Auto-detects columns and queues batch downloads</em>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## ✨ Features
+## 📦 Downloads & Releases
 
-- 🔍 **Fuzzy Input Resolution**: Automatic normalization, artist alias resolution, and confidence scoring via MusicBrainz before any download begins.
-- 📋 **Multi-Source Acquisition**:
-  - **Single Song & Artist Search**: Search canonical recordings with duration and file size estimates.
-  - **CSV File Batch Import**: Upload `.csv` or paste raw text rows (`Artist, Title`), preview tracks via checklist, and batch install.
-  - **Playlist Link Extraction**: Instant tracklist extraction from public playlists.
-- 🎛️ **Audio Quality & Formats**:
-  - **FLAC Lossless**: P2P queries prioritized via Sockseek with bit-perfect Vorbis comments and embedded picture blocks.
-  - **MP3 (320kbps)**: Compact high-bitrate encoding.
-- 👁️ **Preview-Before-Download**: Every download prompts with target directory confirmation and metadata fallback simulation.
-- 🎨 **Feishin-Inspired Visuals**:
-  - Atmospheric ambient background that dynamically tints to match the active album artwork colors.
-  - **Synchronized Lyrics Showcase**: Fullscreen lyrics reader powered by locally acquired `.lrc` files with bright active line highlighting.
-  - **Album & Artist Showcase**: High-density table, album cards, and artist discography views.
-  - Zero playback bloat: One-click launching into your native system player (VLC, MPV, Amberol) for bit-perfect audio reproduction.
-- 🛡️ **Authoritative Hierarchy**: Enforces `~/Music/MusicDownloader/{Artist}/{Album}/` with input sanitization and verification leakage guards.
+### 🪟 Windows (x64)
+- **[SheroFetch-Windows-x64-Portable.zip](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-Windows-x64-Portable.zip)** (11.6 MB) — **Zero-prerequisite portable bundle.** Includes `SheroFetch.exe`, `WebView2Loader.dll`, embedded Python engines, and launcher script. Unzip anywhere and run immediately!
+- **[SheroFetch-Windows-x64.exe](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-Windows-x64.exe)** (21.7 MB) — Standalone single-file 64-bit Windows executable.
+
+### 📱 Android (Universal APK)
+- **[SheroFetch-v2.4-FLAC.apk](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-v2.4-FLAC.apk)** (4.2 MB) — **Latest on-device standalone mobile edition.** Runs completely independently on Android (tested on Samsung Galaxy S25+). Features on-device WebAssembly bit-perfect FLAC transcoding, synchronized `.lrc` lyrics, and automatic export to your phone's public `Documents/SheroFetch/Music/` folder!
+- **[SheroFetch-debug.apk](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/SheroFetch-debug.apk)** (4.2 MB) — Developer / debug mirror.
+
+### 🐧 Linux
+- **Debian / Ubuntu / Linux Mint (.deb)**:
+  - **[sherofetch_2.4_all.deb](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.4.0/sherofetch_2.4_all.deb)**
+  ```bash
+  sudo dpkg -i sherofetch_2.4_all.deb
+  sudo apt-get install -f
+  ```
+- **Arch Linux / AUR**:
+  ```bash
+  makepkg -si
+  ```
 
 ---
 
-## 🏛️ Architecture
+## 🎧 Lossless Audio & Playback Architecture Note
+
+> [!IMPORTANT]
+> **What SheroFetch Is:**
+> SheroFetch is an authoritative **music acquisition engine, downloader, library organizer, tagger, and synced lyrics showcase**. It encodes and saves genuine bit-perfect **FLAC Lossless** (16-bit / 24-bit PCM, 44.1kHz / 48kHz, stereo), pristine **320kbps MP3s**, high-resolution cover artwork, and timed `.lrc` lyrics.
+>
+> **Integrated Player vs. Audiophile Playback:**
+> SheroFetch includes an integrated lightweight preview player and lyrics reader. Because standard web views downsample or route audio through system web decoders, **for true hardware-accelerated studio-grade bit-perfect playback**, we recommend opening your downloaded files in dedicated audiophile players:
+> - **Android**: [Poweramp](https://powerampapp.com/), USB Audio Player PRO, Fiio Music, or Samsung Music (files are directly accessible in `Documents/SheroFetch/Music/`).
+> - **Windows**: Foobar2000, VLC Media Player, MusicBee, AIMP.
+> - **Linux**: Strawberry Music Player, DeaDBeeF, VLC.
+
+---
+
+## 🌟 Key Capabilities
+
+### 1. 🔗 Universal Music Link Resolver
+Paste links from any major streaming platform directly into SheroFetch:
+- **Spotify**:
+  - Track link (`https://open.spotify.com/track/...`): Automatically extracts exact title, artist, and album.
+  - Playlist & Album links (`https://open.spotify.com/playlist/...`, `https://open.spotify.com/album/...`): Extracts all tracks with full metadata.
+- **YouTube & YouTube Music**:
+  - Track / Video link (`https://music.youtube.com/watch?v=...`, `https://www.youtube.com/watch?v=...`, `https://youtu.be/...`): Cleans video titles (stripping `Official Music Video`, `4K`, `Lyrics`) and resolves artist & song.
+  - Playlist links (`https://music.youtube.com/playlist?list=...`, `https://www.youtube.com/playlist?list=...`): Parses playlist items seamlessly on-device.
+- **Apple Music**:
+  - Track link (`https://music.apple.com/.../album/...?...i=1440844784`): Fetches canonical iTunes track information.
+  - Album link (`https://music.apple.com/.../album/...`): Extracts full album tracklist.
+- **JioSaavn & Generic Web Links**: Direct API token extraction and OpenGraph metadata fallback.
+
+### 2. 🎛️ Audio Quality & Formats
+- **FLAC (Lossless Studio)**: Bit-perfect linear PCM encoding using native WebAssembly and Soulseek P2P lossless audio pipeline. Includes Vorbis tags, embedded metadata, and high-res cover art.
+- **MP3 (320kbps Studio)**: High-fidelity MP3 with ID3v2.4 frames.
+- **WAV (PCM)**: Uncompressed linear studio audio.
+- **M4A (AAC)**: High-efficiency 256kbps audio.
+
+### 3. 📄 Smart CSV Batch Import
+- Automatically detects column headers (`Artist, Title` or `Title, Artist`).
+- Supports comma, semicolon, tab, and hyphenated text (`Artist - Title`).
+- Interactive checklist to select specific tracks or select all.
+- Progress bar displaying active track, current index, and pipeline status.
+
+### 4. 🎨 Lyrics & Cover Art Integration
+- **Synced Lyrics (`.lrc`)**: Sourced via LRCLIB and embedded synchronization.
+- **Atmospheric Lyrics Showcase**: Feishin-inspired fullscreen lyrics view with dynamic album-color ambient glow and active verse highlighting.
+- **Authoritative Directory Layout**:
+  ```text
+  ~/Music/SheroFetch/
+  └── <Artist Name>/
+      └── <Album Name>/
+          ├── <Artist> - <Title>.flac
+          ├── <Artist> - <Title>.lrc
+          └── cover.jpg
+  ```
+
+---
+
+## 📖 Step-by-Step User Guide
+
+### A. Downloading Single Songs
+1. Launch **SheroFetch**.
+2. Under the **Acquisition** tab, choose **Song & Artist Name**.
+3. Select your desired format (e.g. **FLAC Lossless**).
+4. Enter the song title and artist — **OR simply paste a Spotify, YouTube, or Apple Music track link** into the Song Title field.
+5. Click **Search Recordings**, review the candidate matches, and confirm download.
+
+### B. Downloading via Playlist Link
+1. Go to the **Playlist Link** tab.
+2. Paste any public **Spotify**, **YouTube**, **YouTube Music**, or **Apple Music** playlist or album link.
+3. Click **Fetch Tracks**.
+4. The resolved songs will appear in an interactive checklist. Select the ones you want and click **Install Track(s)**.
+
+### C. Downloading via CSV File or Paste
+1. Go to the **CSV File Import** tab.
+2. Either click **Upload .csv File** or paste rows directly into the text area:
+   ```text
+   Justin Bieber, Ghost
+   The Kid LAROI, Thousand Miles
+   Radiohead - Creep
+   ```
+3. The parser instantly displays the tracklist with checkboxes.
+4. Click **Install Track(s)** to download the entire batch.
+
+### D. Managing Your Library & Synced Lyrics
+- Click **Tracks** in the navigation bar to see your organized music.
+- Click the **Microphone (Lyrics)** icon on any song to enter the fullscreen ambient lyrics reader.
+- On mobile, all files are stored in `Documents/SheroFetch/Music/` and instantly show up in Samsung My Files, Poweramp, and VLC.
+
+---
+
+## 🏛️ System Architecture
 
 ```mermaid
 graph TD
-    A[User Input: Single / CSV / Playlist] --> B[Tauri v2 Frontend - React + Feishin UI]
-    B -->|Async IPC / Non-blocking Tokio| C[Rust Core Backend]
-    C -->|Subprocess Execution| D[Python Engine Pipeline]
+    A[Input: Song Query / Link / CSV] --> B[SheroFetch Universal Frontend]
+    B -->|Capacitor / Tauri Bridge| C[On-Device / Desktop Engine]
     
-    subgraph Python Pipeline
-        D --> E[Metadata Resolution - MusicBrainz]
-        E --> F[Authoritative Path Builder - path_manager.py]
-        F --> G[Dual-Engine Downloader - Sockseek & yt-dlp]
-        G --> H[Quality Gate Validation: Duration <= 2s, Size > 1MB]
-        H --> I[Asset Enrichment: Cover Art >= 1000px, Synced LRC, ID3/Vorbis]
+    subgraph Metadata & Link Resolution
+        C --> D[Spotify oEmbed & Next.js API]
+        C --> E[YouTube oEmbed & Lockup Parser]
+        C --> F[iTunes Search & Lookup API]
+        C --> G[LRCLIB Synced Lyrics Engine]
     end
     
-    I --> J[Authoritative Storage: ~/Music/MusicDownloader/Artist/Album/]
-    J --> K[Local index.json Catalog]
-    K --> B
+    subgraph Audio Acquisition
+        C --> H[Soulseek P2P Lossless Stream]
+        C --> I[Studio High-Bitrate Master Stream]
+        H & I --> J[WebAssembly FLAC Bit-Perfect Transcoder]
+    end
+    
+    J --> K[Authoritative Hierarchy: /Music/Artist/Album/]
+    K --> L[Lossless .flac + Synced .lrc + cover.jpg]
+    L --> M[Integrated Viewer / External Audiophile Player]
 ```
 
 ---
 
-## 🚀 Quick Start
+## ⚖️ Legal & Disclaimer
 
-### 1. Download Pre-Built Releases
-Grab the latest release package from the [Releases Page](https://github.com/meet-the-1337/SheroFetch/releases):
-
-#### 🪟 Windows (Primary Release)
-- **[SheroFetch-Windows-x64.exe](https://github.com/meet-the-1337/SheroFetch/releases/download/v1.0.2/SheroFetch-Windows-x64.exe)** — Standalone portable 64-bit Windows executable. Simply download and double-click to run!
-
-#### 🐧 Linux
-- **Debian / Ubuntu / Linux Mint**:
-  ```bash
-  sudo dpkg -i sherofetch_1.0.2_amd64.deb
-  ```
-- **Arch Linux / Manjaro**:
-  ```bash
-  sudo pacman -U sherofetch-bin-1.0.2-1-x86_64.pkg.tar.zst
-  ```
-- **Portable Linux Executable**:
-  ```bash
-  chmod +x sherofetch-linux-x86_64
-  ./sherofetch-linux-x86_64
-  ```
-
-### 2. Run from Source
-```bash
-# Clone the repository
-git clone https://github.com/meet-the-1337/SheroFetch.git
-cd SheroFetch
-
-# Install Python requirements
-pip install -r requirements.txt
-
-# Run the standalone launcher
-./launch_music_downloader.sh
-```
-
----
-
-## 🗺️ Roadmap
-
-- [x] High-performance native Windows executable (`SheroFetch-Windows-x64.exe`)
-- [x] High-performance Tauri v2 + React desktop client for Linux (Arch & Debian)
-- [x] Multi-source acquisition: Single song, CSV batch import, and playlist links
-- [x] Lossless FLAC format selection with Soulseek P2P prioritization
-- [x] Synchronized `.lrc` lyrics showcase with atmospheric dynamic background
-- [ ] **Remote API Mode**: Headless daemon mode with REST / WebSocket API for local network control
-- [ ] **Mobile Companion App**: Android APK interface connecting to the desktop remote API
-- [ ] **macOS DMG**: Signed native `.dmg` bundle for macOS
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for code style guidelines and compliance requirements.
+SheroFetch is an open-source educational utility designed for personal media library organization, metadata enrichment, and archival of content the user has legal rights to download. Users are responsible for complying with local copyright regulations and external service terms.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** — see the [LICENSE](LICENSE) file for details.
+Licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
