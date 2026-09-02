@@ -1,17 +1,21 @@
 import React, { useState, useMemo } from 'react'
 import {
-  Search,
   Music,
-  Disc,
-  User,
   Folder,
-  ShieldCheck,
-  Play,
+  FolderTree,
+  Disc,
+  Mic,
+  Guitar,
+  Calendar,
+  User,
   MoreVertical,
-  Clock,
+  Shuffle,
+  Play,
+  Search,
+  CheckSquare,
+  ArrowUp,
   Sparkles,
-  Trash2,
-  ListMusic
+  X
 } from 'lucide-react'
 
 export function LibraryView({
@@ -20,34 +24,11 @@ export function LibraryView({
   isPlaying = false,
   onSelectTrack,
   onOpenAcquire,
-  onDeleteTrack
+  initialCategory = null
 }) {
-  const [activeCategory, setActiveCategory] = useState('all') // 'all' | 'albums' | 'artists' | 'folders' | 'flac'
-  const [filterQuery, setFilterQuery] = useState('')
-  const [menuOpenId, setMenuOpenId] = useState(null)
-
-  // Filtered tracks based on search query and category
-  const filteredTracks = useMemo(() => {
-    let list = [...library]
-
-    // Category filter
-    if (activeCategory === 'flac') {
-      list = list.filter((t) => (t.file_path || '').toLowerCase().endsWith('.flac') || t.source_used?.includes('FLAC'))
-    }
-
-    // Search query filter
-    if (filterQuery.trim()) {
-      const q = filterQuery.toLowerCase().trim()
-      list = list.filter(
-        (t) =>
-          (t.track || '').toLowerCase().includes(q) ||
-          (t.artist || '').toLowerCase().includes(q) ||
-          (t.album || '').toLowerCase().includes(q)
-      )
-    }
-
-    return list
-  }, [library, activeCategory, filterQuery])
+  // Navigation: null = Category Index (Screenshot 4), or 'all' | 'folders' | 'albums' | 'artists' (Screenshots 1 & 3)
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Unique Albums
   const albums = useMemo(() => {
@@ -55,25 +36,30 @@ export function LibraryView({
     for (const t of library) {
       const key = `${t.album || 'Unknown Album'} - ${t.artist || 'Unknown Artist'}`
       if (!map.has(key)) {
-        map.set(key, { album: t.album || 'Unknown Album', artist: t.artist || 'Unknown Artist', cover: t.cover_path, tracks: [] })
+        map.set(key, {
+          album: t.album || 'Unknown Album',
+          artist: t.artist || 'Unknown Artist',
+          cover: t.cover_path,
+          year: t.year || '2026',
+          tracks: []
+        })
       }
       map.get(key).tracks.push(t)
     }
     return Array.from(map.values())
   }, [library])
 
-  // Unique Artists
-  const artists = useMemo(() => {
-    const map = new Map()
-    for (const t of library) {
-      const key = t.artist || 'Unknown Artist'
-      if (!map.has(key)) {
-        map.set(key, { artist: key, cover: t.cover_path, tracks: [] })
-      }
-      map.get(key).tracks.push(t)
-    }
-    return Array.from(map.values())
-  }, [library])
+  // Filtered tracks for "All Songs" view
+  const filteredTracks = useMemo(() => {
+    if (!searchQuery.trim()) return library
+    const q = searchQuery.toLowerCase().trim()
+    return library.filter(
+      (t) =>
+        (t.track || '').toLowerCase().includes(q) ||
+        (t.artist || '').toLowerCase().includes(q) ||
+        (t.album || '').toLowerCase().includes(q)
+    )
+  }, [library, searchQuery])
 
   const formatDuration = (secs) => {
     if (!secs) return '--:--'
@@ -82,267 +68,310 @@ export function LibraryView({
     return `${m}:${s < 10 ? '0' : ''}${s}`
   }
 
+  // ==========================================
+  // VIEW 1: Main Category Index (Screenshot 4)
+  // ==========================================
+  if (!selectedCategory) {
+    const categories = [
+      { id: 'all', label: 'All Songs', icon: Music, color: 'bg-blue-600' },
+      { id: 'folders', label: 'Folders', icon: Folder, color: 'bg-blue-500' },
+      { id: 'folders_hier', label: 'Folders Hierarchy', icon: FolderTree, color: 'bg-blue-700' },
+      { id: 'albums', label: 'Albums', icon: Disc, color: 'bg-indigo-600' },
+      { id: 'artists', label: 'Artists', icon: Mic, color: 'bg-purple-600' },
+      { id: 'album_artists', label: 'Album Artists', icon: Mic, color: 'bg-purple-500' },
+      { id: 'genres', label: 'Genres', icon: Guitar, color: 'bg-fuchsia-600' },
+      { id: 'years', label: 'Years', icon: Calendar, color: 'bg-teal-600' },
+      { id: 'composers', label: 'Composers', icon: User, color: 'bg-emerald-600' },
+      { id: 'acquire', label: '⚡ Acquire Songs (SheroFetch)', icon: Sparkles, color: 'bg-cyan-500' }
+    ]
+
+    return (
+      <div className="w-full h-full flex flex-col bg-[#07080b] text-white pt-10 px-4 pb-28 select-none overflow-y-auto font-sans">
+        {/* Top Header */}
+        <div className="flex justify-between items-center py-2 px-1 mb-2">
+          <h1 className="text-2xl font-black tracking-tight text-white">Library</h1>
+          <button
+            onClick={onOpenAcquire}
+            className="p-2 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition"
+          >
+            <MoreVertical className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Categories List */}
+        <div className="space-y-3">
+          {categories.map((cat) => {
+            const Icon = cat.icon
+            return (
+              <div
+                key={cat.id}
+                onClick={() => {
+                  if (cat.id === 'acquire') {
+                    onOpenAcquire()
+                  } else {
+                    setSelectedCategory(cat.id === 'folders_hier' ? 'folders' : cat.id)
+                  }
+                }}
+                className="flex items-center gap-4 p-2 rounded-2xl hover:bg-white/5 cursor-pointer transition active:scale-[0.99]"
+              >
+                <div className={`w-11 h-11 rounded-full ${cat.color} flex items-center justify-center text-white shadow-lg flex-shrink-0`}>
+                  <Icon className="w-6 h-6" />
+                </div>
+                <span className="text-base font-bold text-white tracking-wide">{cat.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // ==========================================
+  // VIEW 2: Folders / Albums Grid (Screenshot 1)
+  // ==========================================
+  if (selectedCategory === 'folders' || selectedCategory === 'albums') {
+    return (
+      <div className="w-full h-full flex flex-col bg-[#07080b] text-white pt-10 px-4 pb-28 select-none overflow-y-auto font-sans relative">
+        {/* Back to Library Pill Button */}
+        <div className="flex items-center justify-between mb-2">
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className="poweramp-pill-btn flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white"
+          >
+            <ArrowUp className="w-4 h-4" />
+            <span>Library</span>
+          </button>
+        </div>
+
+        {/* Title & Icon Header */}
+        <div className="flex items-center gap-3 my-2 px-1">
+          <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md">
+            <Folder className="w-7 h-7" />
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight">Folders</h2>
+        </div>
+
+        {/* Poweramp Action Row (Screenshot 1) */}
+        <div className="flex items-center gap-2 my-3 px-1">
+          <button
+            onClick={() => {
+              if (library.length > 0) {
+                const rand = library[Math.floor(Math.random() * library.length)]
+                onSelectTrack(rand)
+              }
+            }}
+            className="poweramp-pill-btn p-2.5 text-white"
+            title="Shuffle"
+          >
+            <Shuffle className="w-5 h-5" />
+          </button>
+
+          <button
+            onClick={() => {
+              if (library.length > 0) onSelectTrack(library[0])
+            }}
+            className="poweramp-pill-btn p-2.5 text-white"
+            title="Play All"
+          >
+            <Play className="w-5 h-5 fill-white" />
+          </button>
+
+          <button
+            onClick={() => setSelectedCategory('all')}
+            className="poweramp-pill-btn p-2.5 text-white"
+            title="Search"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+
+          <button className="poweramp-pill-btn px-4 py-2 text-xs font-bold text-white">
+            Select
+          </button>
+
+          <div className="flex-1" />
+
+          <button
+            onClick={onOpenAcquire}
+            className="poweramp-pill-btn p-2.5 text-white"
+          >
+            <MoreVertical className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* 2-Column Album Artwork Grid (Screenshot 1) */}
+        <div className="grid grid-cols-2 gap-3.5 mt-2">
+          {albums.map((alb, i) => (
+            <div
+              key={i}
+              onClick={() => {
+                if (alb.tracks[0]) onSelectTrack(alb.tracks[0])
+              }}
+              className="flex flex-col cursor-pointer group"
+            >
+              <div className="aspect-square w-full rounded-3xl overflow-hidden bg-zinc-900 shadow-xl border border-white/10 relative">
+                {alb.cover ? (
+                  <img
+                    src={alb.cover}
+                    alt={alb.album}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    onError={(e) => { e.target.style.display = 'none' }}
+                  />
+                ) : (
+                  <div className="w-full h-full bg-zinc-900 flex flex-col items-center justify-center text-zinc-600 gap-1">
+                    <Disc className="w-12 h-12 text-zinc-700" />
+                    <span className="text-[10px] font-mono font-bold text-zinc-500">SHEROFETCH</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Album Title & Artist Text below */}
+              <h3 className="text-sm font-bold text-white truncate mt-2 tracking-tight">
+                {alb.year} - {alb.album}
+              </h3>
+              <p className="text-xs font-semibold text-zinc-400 truncate mt-0.5">
+                {alb.artist}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ==========================================
+  // VIEW 3: All Songs List View (Screenshot 3)
+  // ==========================================
   return (
-    <div className="w-full h-full flex flex-col bg-[#07080B] text-zinc-100 pt-10 px-4 pb-4 select-none overflow-hidden">
-      {/* Search & Ingestion Bar */}
-      <div className="flex items-center gap-2 mb-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+    <div className="w-full h-full flex flex-col bg-[#07080b] text-white pt-10 px-4 pb-28 select-none overflow-y-auto font-sans">
+      {/* Top Search Pill (Screenshot 3) */}
+      <div className="relative flex items-center mb-2">
+        <div className="relative w-full">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
           <input
             type="text"
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Search library by song, artist, album..."
-            className="w-full bg-zinc-900/80 border border-white/10 rounded-2xl pl-10 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search library..."
+            className="w-full h-11 bg-zinc-900/90 border border-white/10 rounded-full pl-12 pr-10 text-sm font-bold text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500 shadow-inner"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* Horizontal Category Chips (Screenshot 3) */}
+      <div className="flex gap-2 overflow-x-auto py-2 no-scrollbar">
+        {['All', 'Albums', 'Artists', 'Album Artists', 'Folders'].map((sub, i) => (
+          <button
+            key={sub}
+            onClick={() => {
+              if (sub === 'Folders' || sub === 'Albums') setSelectedCategory(sub.toLowerCase())
+            }}
+            className={`poweramp-pill-btn px-4 py-1.5 text-xs font-bold whitespace-nowrap ${
+              i === 0 ? 'bg-zinc-800 text-white border-white/20' : 'text-zinc-400'
+            }`}
+          >
+            {sub}
+          </button>
+        ))}
+      </div>
+
+      {/* Action Row: Shuffle, Play, Select, More (Screenshot 3) */}
+      <div className="flex items-center gap-2 my-2">
+        <button
+          onClick={() => {
+            if (filteredTracks.length > 0) {
+              const rand = filteredTracks[Math.floor(Math.random() * filteredTracks.length)]
+              onSelectTrack(rand)
+            }
+          }}
+          className="poweramp-pill-btn p-2.5 text-white"
+        >
+          <Shuffle className="w-5 h-5" />
+        </button>
+
+        <button
+          onClick={() => {
+            if (filteredTracks.length > 0) onSelectTrack(filteredTracks[0])
+          }}
+          className="poweramp-pill-btn p-2.5 text-white"
+        >
+          <Play className="w-5 h-5 fill-white" />
+        </button>
+
+        <button className="poweramp-pill-btn px-4 py-2 text-xs font-bold text-white">
+          Select
+        </button>
+
+        <div className="flex-1" />
 
         <button
           onClick={onOpenAcquire}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs shadow-[0_0_12px_rgba(0,229,255,0.3)] transition"
+          className="poweramp-pill-btn p-2.5 text-white"
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Acquire</span>
+          <MoreVertical className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Category Tabs (Poweramp Navigation Hierarchy) */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar">
-        {[
-          { id: 'all', label: 'All Songs', icon: Music, count: library.length },
-          { id: 'flac', label: 'Lossless Vault', icon: ShieldCheck, count: library.filter(t => (t.file_path || '').endsWith('.flac')).length },
-          { id: 'albums', label: 'Albums', icon: Disc, count: albums.length },
-          { id: 'artists', label: 'Artists', icon: User, count: artists.length },
-          { id: 'folders', label: 'Folders', icon: Folder, count: null }
-        ].map((cat) => {
-          const Icon = cat.icon
-          const isSel = activeCategory === cat.id
-          return (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 border ${
-                isSel
-                  ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_10px_rgba(0,229,255,0.4)]'
-                  : 'bg-white/5 text-zinc-400 border-white/10 hover:bg-white/10'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{cat.label}</span>
-              {cat.count !== null && (
-                <span className={`text-[10px] ml-0.5 px-1.5 py-0.2 rounded-full ${isSel ? 'bg-black/20 text-black' : 'bg-white/10 text-zinc-300'}`}>
-                  {cat.count}
-                </span>
-              )}
-            </button>
-          )
-        })}
+      {/* Section Header: All Songs */}
+      <div className="flex items-center gap-3 my-3">
+        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">All Songs</span>
+        <div className="flex-1 h-[1px] bg-white/10" />
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1 no-scrollbar">
-        {/* VIEW 1: All Tracks / FLAC Vault */}
-        {(activeCategory === 'all' || activeCategory === 'flac') && (
-          <>
-            {filteredTracks.length === 0 ? (
-              <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-zinc-500 gap-2">
-                <Music className="w-10 h-10 text-zinc-600" />
-                <p className="text-sm font-semibold">No tracks found in library</p>
-                <button
-                  onClick={onOpenAcquire}
-                  className="mt-2 px-4 py-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-bold"
-                >
-                  Acquire Your First Track
-                </button>
+      {/* Songs List */}
+      <div className="space-y-3">
+        {filteredTracks.map((t, i) => {
+          const isCurrent = currentTrack && (currentTrack.id === t.id || currentTrack.file_path === t.file_path)
+          const isFlac = (t.file_path || '').toLowerCase().endsWith('.flac') || t.source_used?.includes('FLAC')
+
+          return (
+            <div
+              key={t.id || i}
+              onClick={() => onSelectTrack(t)}
+              className="flex items-center gap-3.5 p-1 rounded-2xl cursor-pointer hover:bg-white/5 transition active:scale-[0.99]"
+            >
+              {/* Rounded-2xl Album Artwork Thumbnail (Screenshot 3) */}
+              <div className="w-14 h-14 rounded-2xl overflow-hidden bg-zinc-800 border border-white/10 flex-shrink-0 shadow-md">
+                {t.cover_path ? (
+                  <img
+                    src={t.cover_path}
+                    alt="Cover"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { e.target.style.display = 'none' }}
+                  />
+                ) : (
+                  <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600">
+                    <Disc className="w-7 h-7" />
+                  </div>
+                )}
               </div>
-            ) : (
-              filteredTracks.map((t, i) => {
-                const isCurrent = currentTrack && (currentTrack.id === t.id || currentTrack.file_path === t.file_path)
-                const isFlac = (t.file_path || '').toLowerCase().endsWith('.flac') || t.source_used?.includes('FLAC')
 
-                return (
-                  <div
-                    key={t.id || i}
-                    onClick={() => onSelectTrack(t)}
-                    className={`relative flex items-center justify-between p-2.5 rounded-2xl transition cursor-pointer border ${
-                      isCurrent
-                        ? 'bg-cyan-950/30 border-cyan-500/40 shadow-[0_0_15px_rgba(0,229,255,0.15)]'
-                        : 'bg-zinc-900/40 hover:bg-zinc-800/60 border-white/5'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {/* Album Art Thumbnail */}
-                      <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden bg-zinc-800 border border-white/10 shadow-md">
-                        {t.cover_path ? (
-                          <img
-                            src={t.cover_path}
-                            alt="Cover"
-                            className="w-full h-full object-cover"
-                            onError={(e) => { e.target.style.display = 'none' }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                            <Disc className="w-6 h-6" />
-                          </div>
-                        )}
-                        {isCurrent && isPlaying && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <div className="w-3 h-3 rounded-full bg-cyan-400 animate-ping" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Track Details */}
-                      <div className="min-w-0 flex-1">
-                        <h4 className={`text-sm font-bold truncate ${isCurrent ? 'text-cyan-400' : 'text-zinc-100'}`}>
-                          {t.track}
-                        </h4>
-                        <p className="text-xs text-zinc-400 truncate mt-0.5">
-                          {t.artist} <span className="text-zinc-600">•</span> {t.album || 'Single'}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span
-                            className={`text-[9px] font-black px-1.5 py-0.5 rounded tracking-wider ${
-                              isFlac
-                                ? 'bg-purple-950/60 text-purple-300 border border-purple-500/30'
-                                : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
-                            }`}
-                          >
-                            {isFlac ? 'FLAC' : '320K'}
-                          </span>
-                          {t.has_lrc && (
-                            <span className="text-[9px] font-bold text-cyan-400/80">LRC</span>
-                          )}
-                          <span className="text-[10px] text-zinc-500 flex items-center gap-0.5 font-mono">
-                            <Clock className="w-2.5 h-2.5" />
-                            {formatDuration(t.duration)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Menu */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setMenuOpenId(menuOpenId === t.id ? null : t.id)
-                      }}
-                      className="p-2 text-zinc-500 hover:text-white rounded-lg transition"
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-
-                    {/* Track Dropdown Popup */}
-                    {menuOpenId === t.id && (
-                      <div
-                        className="absolute right-4 top-12 z-30 w-36 bg-[#0E121B] border border-white/10 rounded-xl shadow-2xl p-1 animate-in fade-in zoom-in-95"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() => {
-                            onSelectTrack(t)
-                            setMenuOpenId(null)
-                          }}
-                          className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition"
-                        >
-                          <Play className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Play Now</span>
-                        </button>
-                        {onDeleteTrack && (
-                          <button
-                            onClick={() => {
-                              onDeleteTrack(t)
-                              setMenuOpenId(null)
-                            }}
-                            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-rose-400 hover:bg-rose-950/30 rounded-lg transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Delete</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </>
-        )}
-
-        {/* VIEW 2: Albums Grid */}
-        {activeCategory === 'albums' && (
-          <div className="grid grid-cols-2 gap-3 pb-4">
-            {albums.map((alb, i) => (
-              <div
-                key={i}
-                onClick={() => {
-                  if (alb.tracks[0]) onSelectTrack(alb.tracks[0])
-                }}
-                className="flex flex-col p-3 rounded-2xl bg-zinc-900/40 hover:bg-zinc-800/60 border border-white/5 cursor-pointer group transition"
-              >
-                <div className="aspect-square w-full rounded-xl overflow-hidden bg-zinc-800 mb-2.5 relative border border-white/10 shadow-lg">
-                  {alb.cover ? (
-                    <img src={alb.cover} alt="Album" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                      <Disc className="w-10 h-10" />
-                    </div>
-                  )}
-                  <div className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-[10px] font-mono font-bold text-white">
-                    {alb.tracks.length} tracks
-                  </div>
+              {/* Title & Metadata Details */}
+              <div className="min-w-0 flex-1">
+                <h4 className={`text-sm font-bold truncate tracking-tight ${isCurrent ? 'text-cyan-400' : 'text-white'}`}>
+                  {t.track || t.title}
+                </h4>
+                <p className="text-xs text-zinc-400 truncate mt-0.5 font-medium">
+                  {t.artist} - {t.album || 'Unknown Album'}
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-mono text-zinc-500 font-semibold">
+                  <span>{formatDuration(t.duration)}</span>
+                  <span>|</span>
+                  <span className="uppercase">{isFlac ? 'flac' : 'mp3'}</span>
+                  <span>|</span>
+                  <span>{isFlac ? '24 bit' : '320k'}</span>
                 </div>
-                <h5 className="text-xs font-bold text-white truncate">{alb.album}</h5>
-                <p className="text-[11px] text-zinc-400 truncate mt-0.5">{alb.artist}</p>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* VIEW 3: Artists List */}
-        {activeCategory === 'artists' && (
-          <div className="space-y-2 pb-4">
-            {artists.map((art, i) => (
-              <div
-                key={i}
-                onClick={() => {
-                  if (art.tracks[0]) onSelectTrack(art.tracks[0])
-                }}
-                className="flex items-center justify-between p-3 rounded-2xl bg-zinc-900/40 hover:bg-zinc-800/60 border border-white/5 cursor-pointer transition"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800 border border-white/10 flex items-center justify-center text-zinc-500">
-                    {art.cover ? (
-                      <img src={art.cover} alt="Artist" className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-6 h-6" />
-                    )}
-                  </div>
-                  <div>
-                    <h5 className="text-sm font-bold text-white">{art.artist}</h5>
-                    <p className="text-xs text-zinc-500">{art.tracks.length} songs in vault</p>
-                  </div>
-                </div>
-                <Play className="w-4 h-4 text-cyan-400 mr-2" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* VIEW 4: Folders */}
-        {activeCategory === 'folders' && (
-          <div className="p-4 rounded-2xl bg-zinc-900/30 border border-white/10 space-y-3">
-            <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold">
-              <Folder className="w-4 h-4" />
-              <span>Storage Locations</span>
             </div>
-            <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-xs font-mono text-zinc-400">
-              <p className="font-bold text-white">Android Public Storage:</p>
-              <p className="text-cyan-400 mt-1">/sdcard/Documents/SheroFetch/Music/</p>
-              <p className="text-[10px] text-zinc-500 mt-1">Directly accessible by Samsung My Files, VLC, and Poweramp.</p>
-            </div>
-          </div>
-        )}
+          )
+        })}
       </div>
     </div>
   )

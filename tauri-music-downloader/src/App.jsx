@@ -5,15 +5,7 @@ import { PlayerStage } from './components/PlayerStage'
 import { LibraryView } from './components/LibraryView'
 import { EqualizerView } from './components/EqualizerView'
 import { AcquireModal } from './components/AcquireModal'
-import {
-  Disc,
-  ListMusic,
-  Sliders,
-  Sparkles,
-  Play,
-  Pause,
-  SkipForward
-} from 'lucide-react'
+import { PowerampDock } from './components/PowerampDock'
 
 export default function App() {
   // Navigation & Modal State
@@ -235,6 +227,7 @@ export default function App() {
             onToggleShuffle={toggleShuffle}
             onOpenEqualizer={() => setActiveTab('equalizer')}
             onOpenAcquire={() => setIsAcquireOpen(true)}
+            onBackToLibrary={() => setActiveTab('library')}
             trackIndex={currentTrackIndex}
             totalTracks={library.length}
           />
@@ -250,96 +243,36 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'search' && (
+          <LibraryView
+            library={library}
+            currentTrack={currentTrack}
+            isPlaying={isPlaying}
+            onSelectTrack={handleSelectTrack}
+            onOpenAcquire={() => setIsAcquireOpen(true)}
+            initialCategory="all"
+          />
+        )}
+
         {activeTab === 'equalizer' && (
           <EqualizerView onClose={() => setActiveTab('player')} />
         )}
       </div>
 
-      {/* Floating Mini-Player Bar (Visible when browsing Library or Equalizer while song is selected) */}
-      {activeTab !== 'player' && currentTrack && (
-        <div
-          onClick={() => setActiveTab('player')}
-          className="mx-3 mb-2 px-3 py-2 rounded-2xl bg-zinc-900/90 border border-white/10 backdrop-blur-xl flex items-center justify-between cursor-pointer shadow-2xl transition active:scale-[0.99]"
-        >
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <img
-              src={currentTrack.cover_path || ''}
-              alt="Mini Cover"
-              className="w-10 h-10 rounded-xl object-cover border border-white/10 bg-zinc-800"
-              onError={(e) => { e.target.style.display = 'none' }}
-            />
-            <div className="min-w-0 flex-1">
-              <h5 className="text-xs font-bold text-white truncate">{currentTrack.track}</h5>
-              <p className="text-[10px] text-cyan-400 truncate">{currentTrack.artist}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                togglePlay()
-              }}
-              className="p-2 rounded-full text-white hover:text-cyan-400 transition"
-            >
-              {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white" />}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleNext()
-              }}
-              className="p-2 rounded-full text-zinc-400 hover:text-white transition"
-            >
-              <SkipForward className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+      {/* Floating Poweramp Dock (Screenshot 1, 2, 3, 4, 5) */}
+      {activeTab !== 'player' && (
+        <PowerampDock
+          currentTrack={currentTrack}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          duration={duration}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onTogglePlay={togglePlay}
+          onOpenPlayer={() => setActiveTab('player')}
+          onOpenAcquire={() => setIsAcquireOpen(true)}
+        />
       )}
-
-      {/* Poweramp Signature Bottom Navigation Bar */}
-      <div className="h-16 px-4 flex items-center justify-around bg-[#090C12] border-t border-white/10 select-none z-30">
-        <button
-          onClick={() => setActiveTab('player')}
-          className={`flex flex-col items-center gap-1 transition ${
-            activeTab === 'player' ? 'text-cyan-400' : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          <Disc className={`w-5 h-5 ${activeTab === 'player' ? 'drop-shadow-[0_0_8px_#00E5FF]' : ''}`} />
-          <span className="text-[10px] font-bold tracking-wider uppercase">Player</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('library')}
-          className={`flex flex-col items-center gap-1 transition ${
-            activeTab === 'library' ? 'text-cyan-400' : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          <ListMusic className={`w-5 h-5 ${activeTab === 'library' ? 'drop-shadow-[0_0_8px_#00E5FF]' : ''}`} />
-          <span className="text-[10px] font-bold tracking-wider uppercase">Library</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('equalizer')}
-          className={`flex flex-col items-center gap-1 transition ${
-            activeTab === 'equalizer' ? 'text-cyan-400' : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          <Sliders className={`w-5 h-5 ${activeTab === 'equalizer' ? 'drop-shadow-[0_0_8px_#00E5FF]' : ''}`} />
-          <span className="text-[10px] font-bold tracking-wider uppercase">Equalizer</span>
-        </button>
-
-        {/* The Special Feature Window: Acquire / Install Songs */}
-        <button
-          onClick={() => setIsAcquireOpen(true)}
-          className="flex flex-col items-center gap-1 text-cyan-400 group transition active:scale-95"
-        >
-          <div className="p-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 group-hover:bg-cyan-500 group-hover:text-black transition shadow-[0_0_12px_rgba(0,229,255,0.3)]">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <span className="text-[10px] font-bold tracking-wider uppercase text-cyan-400">Acquire</span>
-        </button>
-      </div>
 
       {/* Extra Feature Window: SheroFetch Acquisition Engine Modal */}
       <AcquireModal
