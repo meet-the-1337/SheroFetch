@@ -49,20 +49,6 @@ export async function encodePcmToFlac(audioBuffer, compressionLevel = 5) {
   const totalSamples = audioBuffer.length
   const bps = 16
 
-  // Interleave and quantize Float32 (-1.0 to 1.0) to signed 16-bit Int32Array
-  const bufferI32 = new Int32Array(totalSamples * channels)
-  const left = audioBuffer.getChannelData(0)
-  const right = channels > 1 ? audioBuffer.getChannelData(1) : left
-
-  for (let i = 0; i < totalSamples; i++) {
-    let sL = Math.max(-1, Math.min(1, left[i]))
-    bufferI32[i * channels] = sL < 0 ? Math.round(sL * 0x8000) : Math.round(sL * 0x7FFF)
-    if (channels > 1) {
-      let sR = Math.max(-1, Math.min(1, right[i]))
-      bufferI32[i * channels + 1] = sR < 0 ? Math.round(sR * 0x8000) : Math.round(sR * 0x7FFF)
-    }
-  }
-
   const chunks = []
   function writeCallback(buffer, bytes) {
     chunks.push(new Uint8Array(buffer.buffer, buffer.byteOffset, bytes))
@@ -75,8 +61,25 @@ export async function encodePcmToFlac(audioBuffer, compressionLevel = 5) {
     const initStatus = Flac.init_encoder_stream(encoder, writeCallback, () => {}, false, 0)
     if (initStatus !== 0) throw new Error(`FLAC stream init failed (status ${initStatus})`)
 
-    const ok = Flac.FLAC__stream_encoder_process_interleaved(encoder, bufferI32, totalSamples)
-    if (!ok) console.warn('[FLAC] Incomplete frame processing reported')
+    const left = audioBuffer.getChannelData(0)
+    const right = channels > 1 ? audioBuffer.getChannelData(1) : left
+    const BLOCK_SIZE = 65536
+    const blockI32 = new Int32Array(BLOCK_SIZE * channels)
+
+    for (let offset = 0; offset < totalSamples; offset += BLOCK_SIZE) {
+      const currentBlock = Math.min(BLOCK_SIZE, totalSamples - offset)
+      for (let i = 0; i < currentBlock; i++) {
+        const idx = offset + i
+        let sL = Math.max(-1, Math.min(1, left[idx]))
+        blockI32[i * channels] = sL < 0 ? Math.round(sL * 0x8000) : Math.round(sL * 0x7FFF)
+        if (channels > 1) {
+          let sR = Math.max(-1, Math.min(1, right[idx]))
+          blockI32[i * channels + 1] = sR < 0 ? Math.round(sR * 0x8000) : Math.round(sR * 0x7FFF)
+        }
+      }
+      const ok = Flac.FLAC__stream_encoder_process_interleaved(encoder, blockI32, currentBlock)
+      if (!ok) console.warn('[FLAC] Incomplete frame processing reported at offset', offset)
+    }
 
     Flac.FLAC__stream_encoder_finish(encoder)
   } finally {

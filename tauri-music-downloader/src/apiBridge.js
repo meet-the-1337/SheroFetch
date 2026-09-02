@@ -24,6 +24,29 @@ function base64ToArrayBuffer(base64) {
   return bytes.buffer
 }
 
+async function writeChunkedFile(path, directory, uint8Array, chunkSize = 1024 * 1024) {
+  const total = uint8Array.length
+  const firstEnd = Math.min(chunkSize, total)
+  const firstB64 = uint8ArrayToBase64(uint8Array.subarray(0, firstEnd))
+  
+  await Filesystem.writeFile({
+    path,
+    data: firstB64,
+    directory,
+    recursive: true
+  })
+
+  for (let offset = firstEnd; offset < total; offset += chunkSize) {
+    const end = Math.min(offset + chunkSize, total)
+    const chunkB64 = uint8ArrayToBase64(uint8Array.subarray(offset, end))
+    await Filesystem.appendFile({
+      path,
+      data: chunkB64,
+      directory
+    })
+  }
+}
+
 const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
 
 export function getServerUrl() {
@@ -949,13 +972,8 @@ export async function invoke(cmd, args = {}) {
           console.log(`[SheroFetch FLAC] Successfully encoded ${flacBytes.length} bytes of verified fLaC stream!`)
 
           if (Capacitor.isNativePlatform()) {
-            const b64 = uint8ArrayToBase64(flacBytes)
-            await Filesystem.writeFile({
-              path: filePath,
-              data: b64,
-              directory: Directory.Data,
-              recursive: true
-            })
+            // Write to app Data directory using safe 1MB streaming chunks (prevents OOM on long tracks)
+            await writeChunkedFile(filePath, Directory.Data, flacBytes)
             const stat = await Filesystem.getUri({ path: filePath, directory: Directory.Data })
             if (stat?.uri) {
               finalAudioUrl = Capacitor.convertFileSrc(stat.uri)
@@ -963,12 +981,17 @@ export async function invoke(cmd, args = {}) {
 
             // Export to public Documents folder for user access in Samsung My Files, Poweramp, etc.
             try {
-              await Filesystem.writeFile({
-                path: `SheroFetch/${filePath}`,
-                data: b64,
-                directory: Directory.Documents,
-                recursive: true
-              })
+              try {
+                await Filesystem.copy({
+                  from: filePath,
+                  directory: Directory.Data,
+                  to: `SheroFetch/${filePath}`,
+                  toDirectory: Directory.Documents
+                })
+              } catch (copyErr) {
+                // If direct copy fails, use chunked write to public documents
+                await writeChunkedFile(`SheroFetch/${filePath}`, Directory.Documents, flacBytes)
+              }
               console.log(`[SheroFetch FLAC] Exported to public storage: Documents/SheroFetch/${filePath}`)
             } catch (pubErr) {
               console.warn('[SheroFetch FLAC] Public export notice:', pubErr)
