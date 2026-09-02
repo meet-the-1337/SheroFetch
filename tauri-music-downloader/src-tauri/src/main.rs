@@ -67,10 +67,17 @@ fn get_config_path() -> PathBuf {
     cfg_dir.join("config.json")
 }
 
+const SCRIPT_SEARCH_CLI: &str = include_str!("../../../search_cli.py");
+const SCRIPT_DOWNLOAD_CLI: &str = include_str!("../../../download_cli.py");
+const SCRIPT_MATCH_SONG: &str = include_str!("../../../match_song.py");
+const SCRIPT_PATH_MANAGER: &str = include_str!("../../../path_manager.py");
+const SCRIPT_PIPELINE: &str = include_str!("../../../checkpoint4_pipeline.py");
+const SCRIPT_PLAYLIST_RESOLVER: &str = include_str!("../../../playlist_resolver.py");
+
 fn get_repo_root() -> PathBuf {
     if let Ok(p) = std::env::var("MUSIC_DOWNLOADER_ROOT") {
         let pb = PathBuf::from(p);
-        if pb.exists() {
+        if pb.join("download_cli.py").exists() {
             return pb;
         }
     }
@@ -89,14 +96,73 @@ fn get_repo_root() -> PathBuf {
     if cwd.join("download_cli.py").exists() {
         return cwd;
     }
-    PathBuf::from("/home/ms/all_projects/scrappin")
+
+    // Auto-extract embedded scripts into persistent application storage
+    let base_dir = if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| dirs_next().unwrap_or_default().join("AppData").join("Roaming"))
+            .join("SheroFetch")
+            .join("engine")
+    } else {
+        dirs_next()
+            .unwrap_or_default()
+            .join(".local")
+            .join("share")
+            .join("SheroFetch")
+            .join("engine")
+    };
+
+    let _ = fs::create_dir_all(&base_dir);
+    let _ = fs::write(base_dir.join("search_cli.py"), SCRIPT_SEARCH_CLI);
+    let _ = fs::write(base_dir.join("download_cli.py"), SCRIPT_DOWNLOAD_CLI);
+    let _ = fs::write(base_dir.join("match_song.py"), SCRIPT_MATCH_SONG);
+    let _ = fs::write(base_dir.join("path_manager.py"), SCRIPT_PATH_MANAGER);
+    let _ = fs::write(base_dir.join("checkpoint4_pipeline.py"), SCRIPT_PIPELINE);
+    let _ = fs::write(base_dir.join("playlist_resolver.py"), SCRIPT_PLAYLIST_RESOLVER);
+
+    base_dir
 }
 
-fn get_python_binary() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "python"
+fn get_python_cmd() -> String {
+    if let Ok(custom) = std::env::var("SHEROFETCH_PYTHON") {
+        return custom;
+    }
+    let candidates = if cfg!(target_os = "windows") {
+        vec!["python", "py", "python3"]
     } else {
-        "python3"
+        vec!["python3", "python"]
+    };
+    for cmd in candidates {
+        if let Ok(out) = Command::new(cmd).arg("--version").output() {
+            if out.status.success() {
+                return cmd.to_string();
+            }
+        }
+    }
+    if cfg!(target_os = "windows") { "python".to_string() } else { "python3".to_string() }
+}
+
+fn ensure_python_environment(py: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static BOOTSTRAPPED: AtomicBool = AtomicBool::new(false);
+    if BOOTSTRAPPED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let test_cmd = Command::new(py)
+        .args(["-c", "import requests, mutagen, PIL; print('OK')"])
+        .output();
+
+    let needs_install = match test_cmd {
+        Ok(out) => !out.status.success(),
+        Err(_) => true,
+    };
+
+    if needs_install {
+        let _ = Command::new(py)
+            .args(["-m", "pip", "install", "--quiet", "requests", "mutagen", "pillow", "yt-dlp"])
+            .status();
     }
 }
 
@@ -334,13 +400,21 @@ async fn search_song_candidates(query: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let root = get_repo_root();
         let script_path = root.join("search_cli.py");
-        let py = get_python_binary();
-        let output = Command::new(py)
-            .env("PYTHONPATH", format!("{}:{}", root.display(), root.display()))
+        let py = get_python_cmd();
+        ensure_python_environment(&py);
+
+        let output = Command::new(&py)
+            .current_dir(&root)
+            .env("PYTHONPATH", &root)
             .arg(&script_path)
             .arg(&query)
             .output()
-            .map_err(|e| format!("Search subprocess failed: {}", e))?;
+            .map_err(|e| {
+                format!(
+                    "Failed to launch Python engine ('{}'). Please ensure Python 3 is installed: {}",
+                    py, e
+                )
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -358,8 +432,12 @@ async fn resolve_playlist_url(url: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let root = get_repo_root();
         let script = root.join("playlist_resolver.py");
-        let py = get_python_binary();
-        let output = Command::new(py)
+        let py = get_python_cmd();
+        ensure_python_environment(&py);
+
+        let output = Command::new(&py)
+            .current_dir(&root)
+            .env("PYTHONPATH", &root)
             .arg(&script)
             .arg(&url)
             .output()
@@ -386,9 +464,12 @@ async fn download_song(
     tokio::task::spawn_blocking(move || {
         let root = get_repo_root();
         let script_path = root.join("download_cli.py");
-        let py = get_python_binary();
-        let mut cmd = Command::new(py);
-        cmd.env("PYTHONPATH", format!("{}:{}", root.display(), root.display()))
+        let py = get_python_cmd();
+        ensure_python_environment(&py);
+
+        let mut cmd = Command::new(&py);
+        cmd.current_dir(&root)
+           .env("PYTHONPATH", &root)
            .arg(&script_path)
            .arg(&query);
 
@@ -454,7 +535,15 @@ async fn download_song(
 }
 
 fn main() {
+    // Immediately ensure Python engine scripts are extracted on startup
+    let _ = get_repo_root();
+
     tauri::Builder::default()
+        .setup(|_app| {
+            let py = get_python_cmd();
+            ensure_python_environment(&py);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,

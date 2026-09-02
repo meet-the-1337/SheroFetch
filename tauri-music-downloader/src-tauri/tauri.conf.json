@@ -1,15 +1,15 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Music Downloader",
+  "productName": "SheroFetch",
   "version": "1.0.0",
-  "identifier": "com.musicdownloader.app",
+  "identifier": "com.sherofetch.app",
   "build": {
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "Music Downloader",
+        "title": "SheroFetch",
         "width": 1080,
         "height": 720,
         "minWidth": 360,
