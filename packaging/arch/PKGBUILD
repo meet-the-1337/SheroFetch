@@ -1,6 +1,6 @@
 # Maintainer: Antigravity Team <contact@musicdownloader.app>
 pkgname=music-downloader-bin
-pkgver=1.0.0
+pkgver=1.0.2
 pkgrel=1
 pkgdesc="Lightweight Cross-Platform Music Acquisition & Organization Engine"
 arch=('x86_64')

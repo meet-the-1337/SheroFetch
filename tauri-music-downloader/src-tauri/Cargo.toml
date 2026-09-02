@@ -1,6 +1,6 @@
 [package]
 name = "music-downloader"
-version = "1.0.0"
+version = "1.0.2"
 description = "Native Tauri Desktop Music Acquisition Engine"
 authors = ["Antigravity Team"]
 edition = "2021"

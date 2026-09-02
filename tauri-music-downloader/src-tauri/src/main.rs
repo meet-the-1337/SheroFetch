@@ -124,6 +124,17 @@ fn get_repo_root() -> PathBuf {
     base_dir
 }
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+fn new_command(program: &str) -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: completely hides cmd console popup
+    cmd
+}
+
 fn get_python_cmd() -> String {
     if let Ok(custom) = std::env::var("SHEROFETCH_PYTHON") {
         return custom;
@@ -134,7 +145,7 @@ fn get_python_cmd() -> String {
         vec!["python3", "python"]
     };
     for cmd in candidates {
-        if let Ok(out) = Command::new(cmd).arg("--version").output() {
+        if let Ok(out) = new_command(cmd).arg("--version").output() {
             if out.status.success() {
                 return cmd.to_string();
             }
@@ -150,7 +161,7 @@ fn ensure_python_environment(py: &str) {
         return;
     }
 
-    let test_cmd = Command::new(py)
+    let test_cmd = new_command(py)
         .args(["-c", "import requests, mutagen, PIL; print('OK')"])
         .output();
 
@@ -160,8 +171,8 @@ fn ensure_python_environment(py: &str) {
     };
 
     if needs_install {
-        let _ = Command::new(py)
-            .args(["-m", "pip", "install", "--quiet", "requests", "mutagen", "pillow", "yt-dlp"])
+        let _ = new_command(py)
+            .args(["-m", "pip", "install", "--quiet", "requests", "mutagen", "pillow", "yt-dlp", "imageio-ffmpeg"])
             .status();
     }
 }
@@ -403,7 +414,7 @@ async fn search_song_candidates(query: String) -> Result<String, String> {
         let py = get_python_cmd();
         ensure_python_environment(&py);
 
-        let output = Command::new(&py)
+        let output = new_command(&py)
             .current_dir(&root)
             .env("PYTHONPATH", &root)
             .arg(&script_path)
@@ -435,7 +446,7 @@ async fn resolve_playlist_url(url: String) -> Result<String, String> {
         let py = get_python_cmd();
         ensure_python_environment(&py);
 
-        let output = Command::new(&py)
+        let output = new_command(&py)
             .current_dir(&root)
             .env("PYTHONPATH", &root)
             .arg(&script)
@@ -467,7 +478,7 @@ async fn download_song(
         let py = get_python_cmd();
         ensure_python_environment(&py);
 
-        let mut cmd = Command::new(&py);
+        let mut cmd = new_command(&py);
         cmd.current_dir(&root)
            .env("PYTHONPATH", &root)
            .arg(&script_path)

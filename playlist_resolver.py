@@ -48,9 +48,14 @@ def extract_spotify_playlist(url: str):
     return []
 
 def extract_generic_playlist(url: str):
-    cmd = ["yt-dlp", "--flat-playlist", "-J", "--no-warnings", url]
+    import shutil
+    ytdlp_cmd = ["yt-dlp"] if shutil.which("yt-dlp") else [sys.executable, "-m", "yt_dlp"]
+    cmd = [*ytdlp_cmd, "--flat-playlist", "-J", "--no-warnings", url]
+    kwargs = {"capture_output": True, "text": True, "timeout": 20}
+    if os.name == "nt":
+        kwargs["creationflags"] = 0x08000000
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        p = subprocess.run(cmd, **kwargs)
         if p.returncode == 0 and p.stdout:
             data = json.loads(p.stdout)
             entries = data.get("entries", [])

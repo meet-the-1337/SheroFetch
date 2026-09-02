@@ -5,9 +5,9 @@ set -e
 REPO_ROOT="/home/ms/all_projects/scrappin"
 TAURI_DIR="$REPO_ROOT/tauri-music-downloader"
 BUILD_DIR="/tmp/music-downloader-deb-build"
-VERSION="1.0.0"
+VERSION="1.0.2"
 ARCH="amd64"
-DEB_NAME="music-downloader_${VERSION}_${ARCH}.deb"
+DEB_NAME="sherofetch_${VERSION}_${ARCH}.deb"
 OUTPUT_DIR="$REPO_ROOT/dist-packages"
 
 echo "==> Building frontend assets..."
@@ -41,6 +41,7 @@ cp "$REPO_ROOT/search_cli.py" "$BUILD_DIR/usr/share/music-downloader/"
 cp "$REPO_ROOT/match_song.py" "$BUILD_DIR/usr/share/music-downloader/"
 cp "$REPO_ROOT/path_manager.py" "$BUILD_DIR/usr/share/music-downloader/"
 cp "$REPO_ROOT/checkpoint4_pipeline.py" "$BUILD_DIR/usr/share/music-downloader/"
+cp "$REPO_ROOT/playlist_resolver.py" "$BUILD_DIR/usr/share/music-downloader/"
 
 # Copy icon
 cp "$TAURI_DIR/src-tauri/icons/128x128.png" "$BUILD_DIR/usr/share/icons/hicolor/128x128/apps/music-downloader.png"
