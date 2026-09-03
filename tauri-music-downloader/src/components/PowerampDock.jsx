@@ -31,7 +31,21 @@ export function PowerampDock({
                     src={currentTrack.cover_path}
                     alt="Mini Cover"
                     className="w-full h-full object-cover"
-                    onError={(e) => { e.target.style.display = 'none' }}
+                    onError={(e) => {
+                      if (currentTrack.artist && (currentTrack.track || currentTrack.title)) {
+                        const q = encodeURIComponent(`${currentTrack.artist} ${currentTrack.track || currentTrack.title}`)
+                        fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=1`)
+                          .then(r => r.json())
+                          .then(d => {
+                            if (d?.results?.[0]?.artworkUrl100) {
+                              e.target.src = d.results[0].artworkUrl100.replace('100x100bb.jpg', '600x600bb.jpg')
+                            }
+                          })
+                          .catch(() => { e.target.style.display = 'none' })
+                      } else {
+                        e.target.style.display = 'none'
+                      }
+                    }}
                   />
                 ) : (
                   <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-500">

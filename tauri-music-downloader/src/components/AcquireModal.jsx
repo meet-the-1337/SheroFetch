@@ -18,6 +18,22 @@ export function AcquireModal({ isOpen, onClose, onTrackInstalled, invokeFn }) {
   const [activeTab, setActiveTab] = useState('search') // 'search' | 'link' | 'csv'
   const [format, setFormat] = useState('flac') // 'flac' | '320k' | 'wav' | 'm4a'
 
+  // Acquisition Mode: 'hybrid' | 'strict_lossless' | 'instant_studio'
+  const [acqMode, setAcqMode] = useState(() => {
+    try {
+      return localStorage.getItem('sherofetch_acq_mode') || 'hybrid'
+    } catch {
+      return 'hybrid'
+    }
+  })
+
+  const handleAcqModeChange = (mode) => {
+    setAcqMode(mode)
+    try {
+      localStorage.setItem('sherofetch_acq_mode', mode)
+    } catch {}
+  }
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
@@ -64,15 +80,26 @@ export function AcquireModal({ isOpen, onClose, onTrackInstalled, invokeFn }) {
   // 2. Download Candidate
   const handleDownloadCandidate = async (cand) => {
     setDownloadingMbid(cand.mbid || cand.title)
-    setStatusMsg({ type: 'info', text: `Acquiring "${cand.title}" in verified ${format.toUpperCase()}...` })
+    const modeLabel = acqMode === 'strict_lossless' ? 'Strict Lossless' : (acqMode === 'instant_studio' ? 'Instant 320k' : 'Hybrid (P2P + Studio)')
+    setStatusMsg({
+      type: 'info',
+      text: acqMode === 'strict_lossless'
+        ? `Searching Soulseek P2P mesh for genuine 1411kbps FLAC: "${cand.title}"...`
+        : `Acquiring "${cand.title}" in ${format.toUpperCase()} [${modeLabel}]...`
+    })
 
     try {
       const installed = await invokeFn('download_song', {
         query: `${cand.artist} - ${cand.title}`,
         preferred_format: format,
+        acq_mode: acqMode,
         recording: cand
       })
-      setStatusMsg({ type: 'success', text: `Successfully installed "${installed.track}" to Library!` })
+      const isP2P = (installed?.source_used || '').includes('Soulseek')
+      setStatusMsg({
+        type: 'success',
+        text: `Installed "${installed.track}" to Library! (${isP2P ? '🟢 True Lossless P2P FLAC' : '🔵 Studio Master Audio'})`
+      })
       if (onTrackInstalled) onTrackInstalled(installed)
     } catch (err) {
       console.error('Download error:', err)
@@ -151,7 +178,8 @@ export function AcquireModal({ isOpen, onClose, onTrackInstalled, invokeFn }) {
       try {
         const res = await invokeFn('download_song', {
           query: `${item.artist} - ${item.title}`,
-          preferred_format: format
+          preferred_format: format,
+          acq_mode: acqMode
         })
         if (res) {
           installedCount++
@@ -209,6 +237,31 @@ export function AcquireModal({ isOpen, onClose, onTrackInstalled, invokeFn }) {
                 }`}
               >
                 {fmt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Engine Acquisition Mode Pills */}
+        <div className="px-5 pt-2 pb-2.5 flex items-center justify-between gap-2 border-b border-white/5 bg-zinc-950/70">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-wider">ENGINE MODE:</span>
+          <div className="flex gap-1.5">
+            {[
+              { id: 'hybrid', label: '⚡ Hybrid (Lossless First)', title: 'Tries Soulseek P2P FLAC first; auto-falls back to 320kbps Studio' },
+              { id: 'strict_lossless', label: '💎 Strict Lossless', title: 'Only accepts verified 1411kbps+ P2P FLAC' },
+              { id: 'instant_studio', label: '🚀 Instant 320k', title: 'Bypasses P2P queues for instant 320kbps studio stream' }
+            ].map((mode) => (
+              <button
+                key={mode.id}
+                onClick={() => handleAcqModeChange(mode.id)}
+                title={mode.title}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                  acqMode === mode.id
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-black shadow-[0_0_10px_rgba(52,211,153,0.5)]'
+                    : 'bg-white/5 text-zinc-400 hover:bg-white/10'
+                }`}
+              >
+                {mode.label}
               </button>
             ))}
           </div>

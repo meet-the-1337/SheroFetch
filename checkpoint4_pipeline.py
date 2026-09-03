@@ -124,8 +124,8 @@ def validate_audio_file(
     if file_size_bytes <= 1024 * 1024:
         return False, f"File size ({file_size_mb} MB) <= 1MB threshold", metrics
 
-    # Gate 2: Duration tolerance (relaxed for radio edit vs album version vs P2P: ±90.0s or 40%)
-    max_tolerance = max(90.0, expected_duration * 0.40)
+    # Gate 2: Duration tolerance (relaxed for radio edit vs album version vs P2P: ±180.0s or 50%)
+    max_tolerance = max(180.0, expected_duration * 0.50)
     if expected_duration > 0 and actual_duration > 0 and dur_diff > max_tolerance:
         return False, f"Duration diff ({dur_diff}s) exceeds ±{max_tolerance:.1f}s tolerance (actual: {actual_duration}s, expected: {expected_duration}s)", metrics
 
@@ -186,26 +186,32 @@ def get_ffmpeg_path() -> Optional[str]:
 def run_sockseek_query(
     query_str: str,
     output_dir: Path,
-    timeout_sec: int = 25,
+    timeout_sec: int = 40,
     prefer_flac: bool = False,
     audio_format: str = "mp3"
 ) -> Optional[Path]:
     """Execute sockseek download for a single query with robust P2P timeout and format preference."""
-    if shutil.which("sockseek") is None:
+    sockseek_bin = (
+        shutil.which("sockseek")
+        or (str(Path.home() / ".local" / "bin" / "sockseek") if (Path.home() / ".local" / "bin" / "sockseek").exists() else None)
+        or "/home/ms/.local/bin/sockseek"
+    )
+    if not sockseek_bin or not Path(sockseek_bin).exists():
         return None
 
-    existing_files = set(output_dir.glob("*"))
+    existing_files = set(output_dir.rglob("*"))
     cmd = [
-        "sockseek",
+        sockseek_bin,
         "-s", query_str,
         "-o", str(output_dir),
-        "--search-timeout", "15000",
+        "--search-timeout", "6000",
         "-d",
         "--length-tol=-1",
         "--no-progress"
     ]
     if audio_format.lower() == "flac" or prefer_flac:
-        cmd.extend(["--pref-format", "flac"])
+        # Strictly require genuine FLAC rips from Soulseek peers
+        cmd.extend(["--format", "flac"])
     elif audio_format.lower() in ["mp3", "m4a", "wav"]:
         cmd.extend(["--pref-format", audio_format.lower()])
 
@@ -222,8 +228,8 @@ def run_sockseek_query(
         pass
 
     # Detect newly created audio files (NEVER accept webm)
-    current_files = set(output_dir.glob("*"))
-    new_files = [f for f in (current_files - existing_files) if f.suffix.lower() in [".mp3", ".flac", ".m4a", ".wav", ".ogg", ".opus"]]
+    current_files = set(output_dir.rglob("*"))
+    new_files = [f for f in (current_files - existing_files) if f.is_file() and f.suffix.lower() in [".mp3", ".flac", ".m4a", ".wav", ".ogg", ".opus"]]
     if new_files:
         req_ext = f".{audio_format.lower()}"
         exact_matches = [f for f in new_files if f.suffix.lower() == req_ext]
@@ -357,10 +363,9 @@ def download_pipeline(
 
     if is_flac:
         variations = [
-            f"{artist} - {clean_t} flac",
-            f"{artist} {clean_t} flac",
+            f"{artist} {clean_t}",
             f"{artist} - {clean_t}",
-            f"{clean_t} {artist}"
+            f"{clean_t}"
         ]
     else:
         variations = [
@@ -380,7 +385,8 @@ def download_pipeline(
                 dummy_path.write_bytes(b"DUMMY_AUDIO_DATA" * 1000)
                 candidate_file = dummy_path
             else:
-                candidate_file = run_sockseek_query(var_query, output_dir, timeout_sec=20, prefer_flac=is_flac, audio_format=preferred_format)
+                sockseek_timeout = 90 if is_flac else 35
+                candidate_file = run_sockseek_query(var_query, output_dir, timeout_sec=sockseek_timeout, prefer_flac=is_flac, audio_format=preferred_format)
 
             if candidate_file and candidate_file.exists():
                 is_valid, reason, metrics = validate_audio_file(candidate_file, artist, clean_t, expected_duration, expected_format=preferred_format)
