@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: sherofetch-p2p-gateway
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/soulseek/profile
+    autoDeploy: true

@@ -77,12 +77,47 @@ export function setAcquisitionMode(mode) {
   } catch {}
 }
 
-// Auto-discovers any reachable Soulseek / FLAC backend server on LAN or localhost
+// Dynamically fetches the current 24/7 Cloud P2P Gateway URL from GitHub
+// Allows instant global URL updates for all mobile users with zero APK re-installs
+export async function getActiveCloudGateway() {
+  const DEFAULT_GATEWAY = 'https://proceed-derived-incorporated-examines.trycloudflare.com'
+  try {
+    const rawUrl = 'https://raw.githubusercontent.com/meet-the-1337/SheroFetch/main/gateway_url.txt'
+    if (Capacitor.isNativePlatform() && typeof CapacitorHttp !== 'undefined') {
+      const res = await CapacitorHttp.get({
+        url: rawUrl,
+        connectTimeout: 2000,
+        readTimeout: 2000
+      })
+      if (res && res.status === 200 && typeof res.data === 'string') {
+        const url = res.data.trim()
+        if (url.startsWith('http')) {
+          localStorage.setItem('sherofetch_remote_gateway', url)
+          return url
+        }
+      }
+    } else {
+      const res = await fetch(rawUrl, { signal: AbortSignal.timeout(2000) })
+      if (res.ok) {
+        const url = (await res.text()).trim()
+        if (url.startsWith('http')) {
+          localStorage.setItem('sherofetch_remote_gateway', url)
+          return url
+        }
+      }
+    }
+  } catch {}
+  return localStorage.getItem('sherofetch_remote_gateway') || DEFAULT_GATEWAY
+}
+
+// Auto-discovers any reachable Soulseek / FLAC backend server globally or on LAN
 export async function findReachableLosslessServer() {
   const custom = getServerUrl()
+  const dynamicGateway = await getActiveCloudGateway()
   const candidates = [
     custom,
-    'https://proceed-derived-incorporated-examines.trycloudflare.com', // 24/7 Public Cloud Lossless P2P Gateway
+    dynamicGateway,
+    'https://proceed-derived-incorporated-examines.trycloudflare.com',
     'http://127.0.0.1:5050',
     'http://localhost:5050',
     'http://172.16.213.166:5050',
@@ -1112,130 +1147,58 @@ export async function invoke(cmd, args = {}) {
 
               // Download genuine FLAC binary onto phone filesystem
               if (Capacitor.isNativePlatform()) {
-                // Pre-create directory structures recursively to prevent ENOENT
-                try {
-                  await Filesystem.mkdir({
-                    path: folderPath,
-                    directory: Directory.Data,
-                    recursive: true
-                  })
-                } catch {}
-                try {
-                  await Filesystem.mkdir({
-                    path: `SheroFetch/${folderPath}`,
-                    directory: Directory.Documents,
-                    recursive: true
-                  })
-                } catch {}
-
+                const singleAudioPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${fileName}`
                 try {
                   const dlRes = await Filesystem.downloadFile({
                     url: remoteAudioUrl,
-                    path: filePath,
-                    directory: Directory.Data,
+                    path: singleAudioPath,
+                    directory: Directory.ExternalStorage,
                     recursive: true
                   })
                   if (dlRes?.path) {
                     finalAudioUrl = Capacitor.convertFileSrc(dlRes.path)
-                    console.log(`[SheroFetch Download] Saved lossless FLAC to device: ${dlRes.path}`)
+                    console.log(`[SheroFetch Download] Saved single master lossless FLAC to device: ${dlRes.path}`)
                   }
                 } catch (dlErr) {
-                  console.warn('[SheroFetch Download] Remote audio sync warning:', dlErr)
+                  console.warn('[SheroFetch Download] Audio download warning:', dlErr)
                 }
-
-                // Public Documents export
-                try {
-                  await Filesystem.downloadFile({
-                    url: remoteAudioUrl,
-                    path: `SheroFetch/${filePath}`,
-                    directory: Directory.Documents,
-                    recursive: true
-                  })
-                  console.log(`[SheroFetch FLAC] Exported to public Documents: SheroFetch/${filePath}`)
-                } catch {}
-
-                // Standard Android Public Music directory (/storage/emulated/0/Music/SheroFetch/...)
-                try {
-                  const extAudioPath = `Music/SheroFetch/${filePath.replace(/^Music\//, '')}`
-                  await Filesystem.downloadFile({
-                    url: remoteAudioUrl,
-                    path: extAudioPath,
-                    directory: Directory.ExternalStorage,
-                    recursive: true
-                  })
-                  console.log(`[SheroFetch FLAC] Exported to standard Android Music: ${extAudioPath}`)
-                } catch {}
               }
 
-              // Save lyrics from server
+              // Save lyrics from server (Single file, no duplicates)
               if (serverRes.lrc_content) {
                 try {
                   localStorage.setItem(`sherofetch_lrc_${lrcPath}`, serverRes.lrc_content)
                   if (Capacitor.isNativePlatform()) {
+                    const singleLrcPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${safeArtist} - ${safeTrack}.lrc`
                     await Filesystem.writeFile({
-                      path: lrcPath,
+                      path: singleLrcPath,
                       data: serverRes.lrc_content,
-                      directory: Directory.Data,
+                      directory: Directory.ExternalStorage,
                       encoding: Encoding.UTF8,
                       recursive: true
                     })
-                    try {
-                      await Filesystem.writeFile({
-                        path: `SheroFetch/${lrcPath}`,
-                        data: serverRes.lrc_content,
-                        directory: Directory.Documents,
-                        encoding: Encoding.UTF8,
-                        recursive: true
-                      })
-                    } catch {}
-                    try {
-                      const extLrcPath = `Music/SheroFetch/${lrcPath.replace(/^Music\//, '')}`
-                      await Filesystem.writeFile({
-                        path: extLrcPath,
-                        data: serverRes.lrc_content,
-                        directory: Directory.ExternalStorage,
-                        encoding: Encoding.UTF8,
-                        recursive: true
-                      })
-                    } catch {}
                   }
                 } catch {}
               }
 
-              // Download and resolve Cover Art to native storage (eliminates Mixed Content blocking)
+              // Download Cover Art to single master storage
               let finalCoverUrl = null
               if (serverRes.cover_url) {
                 const remoteCover = `${reachableHost}${serverRes.cover_url}`
                 if (Capacitor.isNativePlatform()) {
                   try {
+                    const singleCoverPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/cover.jpg`
                     const cRes = await Filesystem.downloadFile({
                       url: remoteCover,
-                      path: coverPath,
-                      directory: Directory.Data,
+                      path: singleCoverPath,
+                      directory: Directory.ExternalStorage,
                       recursive: true
                     })
                     if (cRes?.path) {
                       finalCoverUrl = Capacitor.convertFileSrc(cRes.path)
                       localStorage.setItem(`sherofetch_cover_${coverPath}`, finalCoverUrl)
-                      console.log(`[SheroFetch Cover] Saved cover art to device: ${cRes.path}`)
+                      console.log(`[SheroFetch Cover] Saved single cover art to device: ${cRes.path}`)
                     }
-                    try {
-                      await Filesystem.downloadFile({
-                        url: remoteCover,
-                        path: `SheroFetch/${coverPath}`,
-                        directory: Directory.Documents,
-                        recursive: true
-                      })
-                    } catch {}
-                    try {
-                      const extCoverPath = `Music/SheroFetch/${coverPath.replace(/^Music\//, '')}`
-                      await Filesystem.downloadFile({
-                        url: remoteCover,
-                        path: extCoverPath,
-                        directory: Directory.ExternalStorage,
-                        recursive: true
-                      })
-                    } catch {}
                   } catch (covErr) {
                     console.warn('[SheroFetch Cover] Error downloading cover art:', covErr)
                   }
@@ -1253,33 +1216,17 @@ export async function invoke(cmd, args = {}) {
                   if (itData?.results?.[0]?.artworkUrl100) {
                     const hiResCover = itData.results[0].artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg')
                     if (Capacitor.isNativePlatform()) {
+                      const singleCoverPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/cover.jpg`
                       const cRes = await Filesystem.downloadFile({
                         url: hiResCover,
-                        path: coverPath,
-                        directory: Directory.Data,
+                        path: singleCoverPath,
+                        directory: Directory.ExternalStorage,
                         recursive: true
                       })
                       if (cRes?.path) {
                         finalCoverUrl = Capacitor.convertFileSrc(cRes.path)
                         localStorage.setItem(`sherofetch_cover_${coverPath}`, finalCoverUrl)
                       }
-                      try {
-                        await Filesystem.downloadFile({
-                          url: hiResCover,
-                          path: `SheroFetch/${coverPath}`,
-                          directory: Directory.Documents,
-                          recursive: true
-                        })
-                      } catch {}
-                      try {
-                        const extCoverPath = `Music/SheroFetch/${coverPath.replace(/^Music\//, '')}`
-                        await Filesystem.downloadFile({
-                          url: hiResCover,
-                          path: extCoverPath,
-                          directory: Directory.ExternalStorage,
-                          recursive: true
-                        })
-                      } catch {}
                     } else {
                       finalCoverUrl = hiResCover
                     }
@@ -1381,29 +1328,14 @@ export async function invoke(cmd, args = {}) {
           console.log(`[SheroFetch FLAC] Successfully encoded ${flacBytes.length} bytes of verified fLaC stream!`)
 
           if (Capacitor.isNativePlatform()) {
-            // Write to app Data directory using safe 1MB streaming chunks (prevents OOM on long tracks)
-            await writeChunkedFile(filePath, Directory.Data, flacBytes)
-            const stat = await Filesystem.getUri({ path: filePath, directory: Directory.Data })
+            const singleAudioPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${fileName}`
+            await writeChunkedFile(singleAudioPath, Directory.ExternalStorage, flacBytes)
+            const stat = await Filesystem.getUri({
+              path: singleAudioPath,
+              directory: Directory.ExternalStorage
+            })
             if (stat?.uri) {
               finalAudioUrl = Capacitor.convertFileSrc(stat.uri)
-            }
-
-            // Export to public Documents folder for user access in Samsung My Files, Poweramp, etc.
-            try {
-              try {
-                await Filesystem.copy({
-                  from: filePath,
-                  directory: Directory.Data,
-                  to: `SheroFetch/${filePath}`,
-                  toDirectory: Directory.Documents
-                })
-              } catch (copyErr) {
-                // If direct copy fails, use chunked write to public documents
-                await writeChunkedFile(`SheroFetch/${filePath}`, Directory.Documents, flacBytes)
-              }
-              console.log(`[SheroFetch FLAC] Exported to public storage: Documents/SheroFetch/${filePath}`)
-            } catch (pubErr) {
-              console.warn('[SheroFetch FLAC] Public export notice:', pubErr)
             }
           } else {
             const blob = new Blob([flacBytes], { type: 'audio/flac' })
@@ -1411,32 +1343,23 @@ export async function invoke(cmd, args = {}) {
           }
           fileSizeMb = parseFloat((flacBytes.length / (1024 * 1024)).toFixed(2))
         } else {
-          // Standard download for non-FLAC
-          console.log(`[SheroFetch Download] Downloading audio via native background stream...`)
+          // Standard download for non-FLAC (Single write to ExternalStorage)
+          console.log(`[SheroFetch Download] Downloading audio via native stream...`)
           if (Capacitor.isNativePlatform()) {
+            const singleAudioPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${fileName}`
             const dlRes = await Filesystem.downloadFile({
               url: resolved.streamUrl,
-              path: filePath,
-              directory: Directory.Data,
+              path: singleAudioPath,
+              directory: Directory.ExternalStorage,
               recursive: true
             })
             if (dlRes?.path) {
               finalAudioUrl = Capacitor.convertFileSrc(dlRes.path)
               try {
-                const stat = await Filesystem.stat({ path: filePath, directory: Directory.Data })
+                const stat = await Filesystem.stat({ path: singleAudioPath, directory: Directory.ExternalStorage })
                 if (stat?.size) fileSizeMb = parseFloat((stat.size / (1024 * 1024)).toFixed(2))
               } catch {}
             }
-
-            // Also copy to public Documents
-            try {
-              await Filesystem.downloadFile({
-                url: resolved.streamUrl,
-                path: `SheroFetch/${filePath}`,
-                directory: Directory.Documents,
-                recursive: true
-              })
-            } catch {}
           }
         }
       } catch (dlErr) {
@@ -1444,56 +1367,40 @@ export async function invoke(cmd, args = {}) {
         throw new Error(`Audio download failed: ${dlErr.message || dlErr}`)
       }
 
-      // Step 3: Download cover art
+      // Step 3: Download cover art (Single write to ExternalStorage)
       let finalCoverUrl = resolved.coverUrl
       if (resolved.coverUrl) {
         try {
           if (Capacitor.isNativePlatform()) {
+            const singleCoverPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/cover.jpg`
             const cRes = await Filesystem.downloadFile({
               url: resolved.coverUrl,
-              path: coverPath,
-              directory: Directory.Data,
+              path: singleCoverPath,
+              directory: Directory.ExternalStorage,
               recursive: true
             })
             if (cRes?.path) {
               finalCoverUrl = Capacitor.convertFileSrc(cRes.path)
-              localStorage.setItem(`sherofetch_cover_${coverPath}`, finalCoverUrl)
+              localStorage.setItem(`sherofetch_cover_${singleCoverPath}`, finalCoverUrl)
             }
-            try {
-              await Filesystem.downloadFile({
-                url: resolved.coverUrl,
-                path: `SheroFetch/${coverPath}`,
-                directory: Directory.Documents,
-                recursive: true
-              })
-            } catch {}
           }
         } catch (cErr) {
           console.warn('Cover save notice:', cErr)
         }
       }
 
-      // Step 4: Fetch and save synchronized lyrics (.lrc)
+      // Step 4: Fetch and save synchronized lyrics (.lrc) (Single write to ExternalStorage)
       const syncedLyrics = await fetchSyncedLyrics(resolved.artist, resolved.title)
       try {
-        localStorage.setItem(`sherofetch_lrc_${lrcPath}`, syncedLyrics)
         if (Capacitor.isNativePlatform()) {
+          const singleLrcPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${safeArtist} - ${safeTrack}.lrc`
           await Filesystem.writeFile({
-            path: lrcPath,
+            path: singleLrcPath,
             data: syncedLyrics,
-            directory: Directory.Data,
+            directory: Directory.ExternalStorage,
             encoding: Encoding.UTF8,
             recursive: true
           })
-          try {
-            await Filesystem.writeFile({
-              path: `SheroFetch/${lrcPath}`,
-              data: syncedLyrics,
-              directory: Directory.Documents,
-              encoding: Encoding.UTF8,
-              recursive: true
-            })
-          } catch {}
         }
         console.log(`[SheroFetch Download] Saved synced lyrics (${syncedLyrics.length} chars)`)
       } catch (lErr) {
