@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Install system dependencies: ffmpeg, curl
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
@@ -9,15 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy requirements and install
+# Download sockseek binary during build
+RUN curl -L -o /usr/local/bin/sockseek https://github.com/meet-the-1337/sockseek/releases/download/v1.0.0/sockseek-linux-x64 \
+    && chmod +x /usr/local/bin/sockseek
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt fastapi uvicorn yt-dlp
 
-# Copy sockseek if present
-COPY sockseek* /usr/local/bin/ || true
-RUN chmod +x /usr/local/bin/sockseek* 2>/dev/null || true
-
-# Copy application source
 COPY . .
 
 EXPOSE 5050
