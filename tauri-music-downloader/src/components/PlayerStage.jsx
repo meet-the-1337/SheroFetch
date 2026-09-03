@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   Play,
   Pause,
@@ -15,7 +15,8 @@ import {
   Activity,
   Sparkles,
   Download,
-  ArrowUp
+  ArrowUp,
+  User
 } from 'lucide-react'
 import { WaveformSeekbar } from './WaveformSeekbar'
 import { LyricsHUD } from './LyricsHUD'
@@ -38,10 +39,37 @@ export function PlayerStage({
   onOpenEqualizer,
   onOpenAcquire,
   onBackToLibrary,
+  onOpenProfile,
+  soulseekProfile = null,
   trackIndex = 0,
   totalTracks = 0
 }) {
   const [stageMode, setStageMode] = useState('cover') // 'cover' | 'lyrics' | 'visualizer'
+  const [resolvedCover, setResolvedCover] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    const c = currentTrack?.cover_path
+    if (c && !c.startsWith('http://127.0.0.1') && !c.startsWith('http://localhost')) {
+      setResolvedCover(c)
+    } else {
+      setResolvedCover(null)
+      // Fetch studio master artwork from iTunes CDN
+      if (currentTrack?.artist && currentTrack?.track) {
+        const q = encodeURIComponent(`${currentTrack.artist} ${currentTrack.track}`)
+        fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=1`)
+          .then(r => r.json())
+          .then(d => {
+            if (active && d?.results?.[0]?.artworkUrl100) {
+              const hiRes = d.results[0].artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg')
+              setResolvedCover(hiRes)
+            }
+          })
+          .catch(() => {})
+      }
+    }
+    return () => { active = false }
+  }, [currentTrack])
 
   // Gesture handling on album art
   const touchStartX = useRef(0)
@@ -66,73 +94,100 @@ export function PlayerStage({
   return (
     <div className="w-full h-full flex flex-col justify-between bg-poweramp-base text-zinc-100 pt-10 px-4 pb-3 select-none overflow-hidden relative font-sans">
       {/* Dynamic Ambient Glow matching album art */}
-      {currentTrack?.cover_path && (
+      {resolvedCover && (
         <div
-          className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full blur-[110px] opacity-30 pointer-events-none transition-all duration-1000"
+          className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full blur-[110px] opacity-35 pointer-events-none transition-all duration-1000"
           style={{
-            backgroundImage: `url(${currentTrack.cover_path})`,
+            backgroundImage: `url(${resolvedCover})`,
             backgroundSize: 'cover'
           }}
         />
       )}
 
-      {/* 1. Top Header: Track Counter & Mode Selector */}
-      <div className="flex justify-between items-center z-10">
-        <div className="flex items-center gap-2.5">
-          {onBackToLibrary && (
+      {/* 1. Top Header: Two-Row Responsive Layout (Zero-Overflow Guarantee) */}
+      <div className="flex flex-col gap-2.5 z-10 w-full px-0.5">
+        {/* Row A: Navigation, Counter, & Profile */}
+        <div className="flex justify-between items-center w-full">
+          <div className="flex items-center gap-2 min-w-0">
+            {onBackToLibrary && (
+              <button
+                onClick={onBackToLibrary}
+                className="poweramp-pill-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white flex-shrink-0 shadow-sm"
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+                <span>Library</span>
+              </button>
+            )}
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-mono tracking-widest text-cyan-400 font-bold uppercase">
+                {totalTracks > 0 ? `${trackIndex + 1} / ${totalTracks}` : 'STANDALONE'}
+              </span>
+              <span className="text-xs font-semibold text-zinc-400 truncate max-w-[130px]">
+                {currentTrack?.album || 'SheroFetch'}
+              </span>
+            </div>
+          </div>
+
+          {/* Profile / Soulseek P2P Button */}
+          {onOpenProfile && (
             <button
-              onClick={onBackToLibrary}
-              className="poweramp-pill-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white"
+              onClick={onOpenProfile}
+              className="p-1.5 rounded-xl bg-black/60 border border-white/10 hover:border-cyan-500/40 text-zinc-300 hover:text-white transition flex items-center gap-1.5 px-2.5 flex-shrink-0"
+              title="Audiophile Profile & Open-Source Stack"
             >
-              <ArrowUp className="w-3.5 h-3.5" />
-              <span>Library</span>
+              <User className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-[11px] font-bold max-w-[80px] truncate">
+                {soulseekProfile?.username ? `@${soulseekProfile.username}` : 'Profile'}
+              </span>
+              <span
+                className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  soulseekProfile?.logged_in ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse' : 'bg-zinc-500'
+                }`}
+              />
             </button>
           )}
-          <div className="flex flex-col">
-            <span className="text-[10px] font-mono tracking-widest text-cyan-400 font-bold uppercase">
-              {totalTracks > 0 ? `${trackIndex + 1} / ${totalTracks}` : 'STANDALONE'}
-            </span>
-            <span className="text-xs font-semibold text-zinc-400 truncate max-w-[120px]">
-              {currentTrack?.album || 'SheroFetch'}
-            </span>
-          </div>
         </div>
 
-        {/* Tactile Mode Switcher (Cover | Lyrics | Visualizer) */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/60 border border-white/10 backdrop-blur-md shadow-inner">
-          <button
-            onClick={() => setStageMode('cover')}
-            className={`p-1.5 rounded-lg transition-all ${
-              stageMode === 'cover'
-                ? 'bg-cyan-500 text-black shadow-[0_0_8px_#00e5ff]'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-            title="Cover Art"
-          >
-            <Disc className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setStageMode('lyrics')}
-            className={`p-1.5 rounded-lg transition-all ${
-              stageMode === 'lyrics'
-                ? 'bg-cyan-500 text-black shadow-[0_0_8px_#00e5ff]'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-            title="Lyrics HUD"
-          >
-            <Mic2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setStageMode('visualizer')}
-            className={`p-1.5 rounded-lg transition-all ${
-              stageMode === 'visualizer'
-                ? 'bg-cyan-500 text-black shadow-[0_0_8px_#00e5ff]'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-            title="Spectrum Visualizer"
-          >
-            <Activity className="w-4 h-4" />
-          </button>
+        {/* Row B: Centered Tactile Mode Switcher (Cover | Lyrics | Visualizer) */}
+        <div className="flex justify-center items-center w-full">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-black/70 border border-white/10 backdrop-blur-md shadow-inner">
+            <button
+              onClick={() => setStageMode('cover')}
+              className={`flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                stageMode === 'cover'
+                  ? 'bg-cyan-500 text-black shadow-[0_0_10px_#00e5ff]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Cover Art"
+            >
+              <Disc className="w-3.5 h-3.5" />
+              <span>Cover</span>
+            </button>
+            <button
+              onClick={() => setStageMode('lyrics')}
+              className={`flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                stageMode === 'lyrics'
+                  ? 'bg-cyan-500 text-black shadow-[0_0_10px_#00e5ff]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Lyrics HUD"
+            >
+              <Mic2 className="w-3.5 h-3.5" />
+              <span>Lyrics</span>
+            </button>
+            <button
+              onClick={() => setStageMode('visualizer')}
+              className={`flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                stageMode === 'visualizer'
+                  ? 'bg-cyan-500 text-black shadow-[0_0_10px_#00e5ff]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Spectrum Visualizer"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Visualizer</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -145,17 +200,30 @@ export function PlayerStage({
         {stageMode === 'cover' && (
           <div
             onClick={() => setStageMode('lyrics')}
-            className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-3xl overflow-hidden poweramp-art-frame cursor-pointer transition-transform duration-200 active:scale-95 group"
+            className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-3xl overflow-hidden poweramp-art-frame cursor-pointer transition-transform duration-200 active:scale-95 group shadow-2xl"
           >
-            {currentTrack?.cover_path ? (
+            {resolvedCover ? (
               <img
-                src={currentTrack.cover_path}
+                src={resolvedCover}
                 alt="Cover"
                 className="w-full h-full object-cover select-none pointer-events-none"
+                onError={() => {
+                  if (currentTrack?.artist && currentTrack?.track) {
+                    const q = encodeURIComponent(`${currentTrack.artist} ${currentTrack.track}`)
+                    fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=1`)
+                      .then(r => r.json())
+                      .then(d => {
+                        if (d?.results?.[0]?.artworkUrl100) {
+                          setResolvedCover(d.results[0].artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg'))
+                        }
+                      })
+                      .catch(() => {})
+                  }
+                }}
               />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-zinc-900 to-black flex flex-col items-center justify-center text-zinc-600 gap-2">
-                <Disc className="w-16 h-16 text-zinc-700" />
+                <Disc className="w-16 h-16 text-zinc-700 animate-spin-slow" />
                 <span className="text-xs text-zinc-500 font-mono font-bold tracking-wider uppercase">SheroFetch Hi-Res</span>
               </div>
             )}
@@ -188,14 +256,28 @@ export function PlayerStage({
 
         {/* Poweramp Authentic Monospace Spec Badge */}
         <div className="flex items-center gap-2 mt-2 px-3.5 py-1 rounded-full bg-[#0d1017] border border-white/10 text-[10px] font-mono tracking-wider shadow-inner">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+          <span className={`w-2 h-2 rounded-full ${
+            currentTrack?.source_used?.includes('Soulseek') || currentTrack?.source_used?.includes('1411')
+              ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
+              : 'bg-cyan-400 shadow-[0_0_8px_#00e5ff]'
+          } animate-pulse`} />
           <span className={isFlac ? 'text-purple-300 font-bold' : 'text-cyan-300 font-bold'}>
             {isFlac ? 'FLAC | 24-bit / 48.0 kHz' : 'MP3 | 320 kbps'}
           </span>
           <span className="text-zinc-600">•</span>
-          <span className="text-zinc-300 uppercase font-black">{isFlac ? '1411 KBPS' : 'STEREO'}</span>
+          <span className="text-zinc-300 uppercase font-black">
+            {currentTrack?.source_used?.includes('Soulseek')
+              ? 'TRUE LOSSLESS 1411k'
+              : (isFlac ? 'STUDIO FLAC' : 'STEREO 320k')}
+          </span>
           <span className="text-zinc-600">•</span>
-          <span className="text-cyan-400/90 font-bold">Direct HD</span>
+          <span className={
+            currentTrack?.source_used?.includes('Soulseek')
+              ? 'text-emerald-400 font-bold'
+              : 'text-cyan-400/90 font-bold'
+          }>
+            {currentTrack?.source_used?.includes('Soulseek') ? 'Soulseek P2P' : 'Studio Engine'}
+          </span>
         </div>
       </div>
 

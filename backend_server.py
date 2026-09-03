@@ -50,14 +50,37 @@ def root():
         "soulseek_bin": SOCKSEEK_BIN
     }
 
+def get_soulseek_credentials() -> Tuple[Optional[str], Optional[str]]:
+    u = os.environ.get("SOULSEEK_USERNAME")
+    p = os.environ.get("SOULSEEK_PASSWORD")
+    if u and p:
+        return u, p
+    appdata = os.environ.get("APPDATA")
+    conf_dir = (Path(appdata) / "sockseek") if appdata else (Path.home() / ".config" / "sockseek")
+    conf_file = conf_dir / "sockseek.conf"
+    if conf_file.exists():
+        try:
+            content = conf_file.read_text(encoding="utf-8")
+            u_match = re.search(r"username\s*=\s*(.+)", content)
+            p_match = re.search(r"password\s*=\s*(.+)", content)
+            if u_match and p_match:
+                u_found = u_match.group(1).strip()
+                p_found = p_match.group(1).strip()
+                os.environ["SOULSEEK_USERNAME"] = u_found
+                os.environ["SOULSEEK_PASSWORD"] = p_found
+                return u_found, p_found
+        except Exception:
+            pass
+    return None, None
+
 @app.get("/api/status")
 def get_status():
-    user = os.environ.get("SOULSEEK_USERNAME", "manansingahl")
+    user, _ = get_soulseek_credentials()
     return {
         "status": "online",
-        "soulseek_user": user,
+        "soulseek_user": user or "",
         "soulseek_connected": bool(user),
-        "mesh_status": "P2P Ready (server.slsknet.org:2242)"
+        "mesh_status": f"P2P Ready (server.slsknet.org:2242) as {user}" if user else "P2P Guest Mode"
     }
 
 @app.post("/api/soulseek/login")
@@ -99,7 +122,6 @@ def soulseek_login(req: LoginRequest):
                 }
             )
     except subprocess.TimeoutExpired:
-        # Connection timeout or slow mesh response
         pass
     except Exception as e:
         print(f"Error testing soulseek credentials: {e}")
@@ -125,17 +147,65 @@ def soulseek_login(req: LoginRequest):
         "config_path": str(conf_file)
     }
 
+@app.post("/api/soulseek/logout")
+def soulseek_logout():
+    os.environ.pop("SOULSEEK_USERNAME", None)
+    os.environ.pop("SOULSEEK_PASSWORD", None)
+    appdata = os.environ.get("APPDATA")
+    conf_dir = (Path(appdata) / "sockseek") if appdata else (Path.home() / ".config" / "sockseek")
+    conf_file = conf_dir / "sockseek.conf"
+    if conf_file.exists():
+        try:
+            conf_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+    return {
+        "success": True,
+        "logged_in": False,
+        "username": "",
+        "status": "Signed out from Soulseek P2P Network"
+    }
+
 @app.get("/api/soulseek/profile")
 def soulseek_profile():
-    u = os.environ.get("SOULSEEK_USERNAME", "manansingahl")
+    u, _ = get_soulseek_credentials()
     appdata = os.environ.get("APPDATA")
     conf_dir = (Path(appdata) / "sockseek") if appdata else (Path.home() / ".config" / "sockseek")
     return {
-        "username": u,
+        "username": u or "",
         "logged_in": bool(u),
-        "status": f"Connected to Soulseek (server.slsknet.org) as {u}" if u else "Not Connected",
+        "status": f"Connected to Soulseek P2P Mesh (server.slsknet.org:2242) as {u}" if u else "Guest Mode (Studio Engine)",
+        "server": "server.slsknet.org:2242",
+        "protocol": "Soulseek P2P / Slsk Protocol v160",
         "config_path": str(conf_dir / "sockseek.conf"),
-        "output_dir": str(DEFAULT_VAULT_DIR)
+        "output_dir": str(DEFAULT_VAULT_DIR),
+        "open_source": [
+            {
+                "name": "Soulseek P2P Mesh",
+                "role": "Decentralized Audiophile Network",
+                "description": "True lossless 16-bit / 24-bit studio CD and vinyl FLAC rips directly from global audiophile peers."
+            },
+            {
+                "name": "MusicBrainz",
+                "role": "Canonical Music Encyclopedia",
+                "description": "Open-source ontology providing authoritative metadata, Release Groups, and MBIDs."
+            },
+            {
+                "name": "LRCLIB",
+                "role": "Synced Lyrics Repository",
+                "description": "Crowdsourced open-source synchronized and line-timed lyrics engine."
+            },
+            {
+                "name": "yt-dlp",
+                "role": "Studio Audio Engine",
+                "description": "High-fidelity stream extraction and fallback audio stream pipeline."
+            },
+            {
+                "name": "Capacitor & Android Native",
+                "role": "Native Hardware Runtime",
+                "description": "Hardware-accelerated audio pipelines, low-latency playback, and private sandbox storage."
+            }
+        ]
     }
 
 @app.post("/api/search")
@@ -143,7 +213,8 @@ def search_tracks(query: str = Body(..., embed=True)):
     q = query.strip()
     if not q:
         return {"candidates": []}
-    res = checkpoint4_pipeline.search_and_rank_candidates(q)
+    import match_song
+    res = match_song.match_song(q)
     return res
 
 @app.post("/api/download")

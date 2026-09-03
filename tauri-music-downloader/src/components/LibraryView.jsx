@@ -25,6 +25,8 @@ export function LibraryView({
   isPlaying = false,
   onSelectTrack,
   onOpenAcquire,
+  onOpenProfile,
+  soulseekProfile = null,
   initialCategory = null
 }) {
   // Navigation: null = Category Index (Screenshot 4), or 'all' | 'folders' | 'albums' | 'artists' (Screenshots 1 & 3)
@@ -98,6 +100,23 @@ export function LibraryView({
         <div className="flex justify-between items-center py-2 px-1 mb-2">
           <h1 className="text-2xl font-black tracking-tight text-white">Library</h1>
           <div className="flex items-center gap-2">
+            {onOpenProfile && (
+              <button
+                onClick={onOpenProfile}
+                className="p-1.5 rounded-xl bg-zinc-900 border border-white/10 hover:border-cyan-500/40 text-zinc-300 hover:text-white transition flex items-center gap-1.5 px-2"
+                title="Audiophile Profile & Open-Source Stack"
+              >
+                <User className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-[11px] font-bold max-w-[65px] truncate">
+                  {soulseekProfile?.username ? `@${soulseekProfile.username}` : 'Profile'}
+                </span>
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    soulseekProfile?.logged_in ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'
+                  }`}
+                />
+              </button>
+            )}
             <button
               onClick={onOpenAcquire}
               className="poweramp-pill-btn flex items-center gap-1.5 px-3.5 py-1.5 bg-cyan-500/20 border-cyan-400/60 text-cyan-400 hover:bg-cyan-500 hover:text-black transition shadow-[0_0_14px_rgba(0,229,255,0.35)] text-xs font-black font-mono tracking-wide"
@@ -410,6 +429,14 @@ export function LibraryView({
                   <span className="uppercase">{isFlac ? 'flac' : 'mp3'}</span>
                   <span>|</span>
                   <span>{isFlac ? '24 bit' : '320k'}</span>
+                  <span>|</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                    (t.source_used || '').includes('Soulseek')
+                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-cyan-950 text-cyan-300 border border-cyan-500/40'
+                  }`}>
+                    {(t.source_used || '').includes('Soulseek') ? 'P2P FLAC' : 'Studio'}
+                  </span>
                 </div>
               </div>
             </div>
