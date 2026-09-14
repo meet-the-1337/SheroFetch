@@ -112,7 +112,7 @@ export function LibraryView({
                 </span>
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    soulseekProfile?.logged_in ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'
+                    soulseekProfile?.logged_in ? 'bg-emerald-400 animate-pulse' : (soulseekProfile?.username ? 'bg-rose-500 animate-pulse' : 'bg-zinc-500')
                   }`}
                 />
               </button>

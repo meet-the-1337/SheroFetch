@@ -29,6 +29,7 @@ impl Default for AppConfig {
 pub struct LibraryItem {
     pub id: String,
     pub mbid: Option<String>,
+    pub code: Option<String>,
     pub artist: String,
     pub track: String,
     pub album: String,
@@ -42,6 +43,11 @@ pub struct LibraryItem {
     pub duration: Option<f64>,
     pub file_size_mb: Option<f64>,
     pub source_used: Option<String>,
+    pub tier: Option<String>,
+    pub tier_label: Option<String>,
+    pub how: Option<String>,
+    pub skipped: Option<bool>,
+    pub upgraded: Option<bool>,
     pub downloaded_at: Option<String>,
 }
 
@@ -165,6 +171,13 @@ fn get_python_cmd() -> String {
                 local_app_data.join("Programs").join("Python").join("Python314").join("python.exe"),
                 local_app_data.join("Programs").join("Python").join("Python313").join("python.exe"),
                 local_app_data.join("Programs").join("Python").join("Python312").join("python.exe"),
+                local_app_data.join("Programs").join("Python").join("Python311").join("python.exe"),
+                local_app_data.join("Programs").join("Python").join("Python310").join("python.exe"),
+                local_app_data.join("Programs").join("Python").join("Python39").join("python.exe"),
+                PathBuf::from("C:\\Python312\\python.exe"),
+                PathBuf::from("C:\\Python311\\python.exe"),
+                PathBuf::from("C:\\Program Files\\Python312\\python.exe"),
+                PathBuf::from("C:\\Program Files\\Python311\\python.exe"),
             ];
             for p in paths {
                 if p.exists() {
@@ -297,10 +310,37 @@ async fn get_soulseek_profile() -> Result<SoulseekProfile, String> {
             }
         }
 
+        let live_connected = if logged_in {
+            use std::net::{TcpStream, ToSocketAddrs};
+            use std::time::Duration;
+            let mut reachable = false;
+            for host in &["server.slsknet.org:2242", "208.76.170.59:2242", "208.76.170.59:2271"] {
+                if let Ok(mut addrs) = host.to_socket_addrs() {
+                    if let Some(addr) = addrs.next() {
+                        if TcpStream::connect_timeout(&addr, Duration::from_millis(1500)).is_ok() {
+                            reachable = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            reachable
+        } else {
+            false
+        };
+
+        let status = if !logged_in {
+            "Not Connected".to_string()
+        } else if live_connected {
+            "Connected (Live P2P Mesh)".to_string()
+        } else {
+            "Offline (Server Unreachable)".to_string()
+        };
+
         Ok(SoulseekProfile {
             username,
-            logged_in,
-            status: if logged_in { "Connected (P2P Mesh Ready)".into() } else { "Not Connected".into() },
+            logged_in: logged_in && live_connected,
+            status,
             config_path: conf_path.to_string_lossy().to_string(),
             output_dir,
             pref_format,
@@ -607,12 +647,67 @@ async fn resolve_playlist_url(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn resolve_song_url(url: String) -> Result<String, String> {
+    resolve_playlist_url(url).await
+}
+
+#[tauri::command]
+async fn get_bunch_folder_name(playlist_name: Option<String>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let path = get_config_path();
+        let cfg: AppConfig = if path.exists() {
+            let content = fs::read_to_string(&path).unwrap_or_default();
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            AppConfig::default()
+        };
+        let base_dir = PathBuf::from(&cfg.install_dir);
+        let _ = fs::create_dir_all(&base_dir);
+
+        if let Some(name) = playlist_name {
+            let trimmed = name.trim();
+            if !trimmed.is_empty() {
+                let clean: String = trimmed
+                    .chars()
+                    .filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+                    .collect();
+                let clean = clean.trim().trim_matches('.').to_string();
+                if !clean.is_empty() {
+                    let target = base_dir.join(&clean);
+                    let _ = fs::create_dir_all(&target);
+                    return Ok(clean);
+                }
+            }
+        }
+
+        let mut idx = 1;
+        loop {
+            let candidate = format!("new{}", idx);
+            let candidate_path = base_dir.join(&candidate);
+            if !candidate_path.exists() {
+                let _ = fs::create_dir_all(&candidate_path);
+                return Ok(candidate);
+            }
+            idx += 1;
+        }
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn download_song(
     query: String,
     target_dir: Option<String>,
     selection_index: Option<usize>,
     override_album: Option<String>,
     preferred_format: Option<String>,
+    playlist_name: Option<String>,
+    code: Option<String>,
+    exact_title: Option<String>,
+    exact_artist: Option<String>,
+    exact_url: Option<String>,
+    expected_duration: Option<f64>,
+    acq_mode: Option<String>,
+    upgrade_mode: Option<bool>,
 ) -> Result<LibraryItem, String> {
     tokio::task::spawn_blocking(move || {
         let root = get_repo_root();
@@ -629,11 +724,6 @@ async fn download_song(
         if let Some(ref dir) = target_dir {
             if !dir.trim().is_empty() {
                 cmd.arg("--base-dir").arg(dir);
-                let path = get_config_path();
-                let cfg = AppConfig { install_dir: dir.clone() };
-                if let Ok(content) = serde_json::to_string_pretty(&cfg) {
-                    let _ = fs::write(&path, content);
-                }
             }
         }
         if let Some(idx) = selection_index {
@@ -644,6 +734,44 @@ async fn download_song(
         }
         if let Some(ref fmt) = preferred_format {
             cmd.arg("--format").arg(fmt);
+        }
+        if let Some(ref pl) = playlist_name {
+            if !pl.trim().is_empty() {
+                cmd.arg("--playlist-name").arg(pl);
+            }
+        }
+        if let Some(ref c) = code {
+            if !c.trim().is_empty() {
+                cmd.arg("--code").arg(c);
+            }
+        }
+        if let Some(ref et) = exact_title {
+            if !et.trim().is_empty() {
+                cmd.arg("--exact-title").arg(et);
+            }
+        }
+        if let Some(ref ea) = exact_artist {
+            if !ea.trim().is_empty() {
+                cmd.arg("--exact-artist").arg(ea);
+            }
+        }
+        if let Some(ref eu) = exact_url {
+            if !eu.trim().is_empty() {
+                cmd.arg("--exact-url").arg(eu);
+            }
+        }
+        if let Some(ed) = expected_duration {
+            if ed > 0.0 {
+                cmd.arg("--expected-duration").arg(ed.to_string());
+            }
+        }
+        if let Some(ref am) = acq_mode {
+            if !am.trim().is_empty() {
+                cmd.arg("--acq-mode").arg(am);
+            }
+        }
+        if upgrade_mode.unwrap_or(false) {
+            cmd.arg("--upgrade-mode");
         }
 
         let output = cmd.output().map_err(|e| format!("Download process failed: {}", e))?;
@@ -665,8 +793,9 @@ async fn download_song(
         }
 
         let item = LibraryItem {
-            id: parsed.get("id").or_else(|| parsed.get("mbid")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            id: parsed.get("id").or_else(|| parsed.get("code")).or_else(|| parsed.get("mbid")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
             mbid: parsed.get("mbid").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            code: parsed.get("code").and_then(|v| v.as_str()).map(|s| s.to_string()),
             artist: parsed.get("artist").and_then(|v| v.as_str()).unwrap_or("Unknown Artist").to_string(),
             track: parsed.get("track").and_then(|v| v.as_str()).unwrap_or("Unknown Track").to_string(),
             album: parsed.get("album").and_then(|v| v.as_str()).unwrap_or("Unknown Album").to_string(),
@@ -680,6 +809,11 @@ async fn download_song(
             duration: parsed.get("duration").and_then(|v| v.as_f64()),
             file_size_mb: parsed.get("file_size_mb").and_then(|v| v.as_f64()),
             source_used: parsed.get("source_used").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            tier: parsed.get("tier").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            tier_label: parsed.get("tier_label").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            how: parsed.get("how").or_else(|| parsed.get("source_used")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+            skipped: parsed.get("skipped").and_then(|v| v.as_bool()),
+            upgraded: parsed.get("upgraded").and_then(|v| v.as_bool()),
             downloaded_at: parsed.get("downloaded_at").and_then(|v| v.as_str()).map(|s| s.to_string()),
         };
 
@@ -688,6 +822,13 @@ async fn download_song(
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    {
+        // Fix Linux WebKitGTK DMA-BUF compositing freeze and redraw stalls
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    }
+
     // Immediately ensure Python engine scripts are extracted on startup
     let _ = get_repo_root();
 
@@ -711,6 +852,8 @@ fn main() {
             read_lrc_content,
             search_song_candidates,
             resolve_playlist_url,
+            resolve_song_url,
+            get_bunch_folder_name,
             download_song
         ])
         .run(tauri::generate_context!())

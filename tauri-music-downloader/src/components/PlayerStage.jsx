@@ -93,13 +93,12 @@ export function PlayerStage({
 
   return (
     <div className="w-full h-full flex flex-col justify-between bg-poweramp-base text-zinc-100 pt-10 px-4 pb-3 select-none overflow-hidden relative font-sans">
-      {/* Dynamic Ambient Glow matching album art */}
+      {/* Dynamic Ambient Glow matching album art (GPU-friendly radial gradient) */}
       {resolvedCover && (
         <div
-          className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full blur-[110px] opacity-35 pointer-events-none transition-all duration-1000"
+          className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full opacity-25 pointer-events-none transition-all duration-700"
           style={{
-            backgroundImage: `url(${resolvedCover})`,
-            backgroundSize: 'cover'
+            background: 'radial-gradient(circle, rgba(0, 229, 255, 0.35) 0%, rgba(168, 85, 247, 0.15) 45%, transparent 70%)'
           }}
         />
       )}
@@ -141,7 +140,7 @@ export function PlayerStage({
               </span>
               <span
                 className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  soulseekProfile?.logged_in ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse' : 'bg-zinc-500'
+                  soulseekProfile?.logged_in ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse' : (soulseekProfile?.username ? 'bg-rose-500 shadow-[0_0_6px_#f43f5e] animate-pulse' : 'bg-zinc-500')
                 }`}
               />
             </button>
@@ -150,7 +149,7 @@ export function PlayerStage({
 
         {/* Row B: Centered Tactile Mode Switcher (Cover | Lyrics | Visualizer) */}
         <div className="flex justify-center items-center w-full">
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-black/70 border border-white/10 backdrop-blur-md shadow-inner">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-black/90 border border-white/10 shadow-inner">
             <button
               onClick={() => setStageMode('cover')}
               className={`flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-xs font-bold transition-all ${
@@ -233,7 +232,7 @@ export function PlayerStage({
         )}
 
         {stageMode === 'lyrics' && (
-          <div className="w-full h-64 sm:h-72 rounded-3xl bg-black/50 border border-white/10 backdrop-blur-xl overflow-hidden poweramp-art-frame">
+          <div className="w-full h-64 sm:h-72 rounded-3xl bg-[#090C12] border border-white/10 overflow-hidden poweramp-art-frame">
             <LyricsHUD lrcText={lrcText} currentTime={currentTime} onSeek={onSeek} />
           </div>
         )}

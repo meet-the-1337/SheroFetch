@@ -294,7 +294,7 @@ export function EqualizerView({ onClose }) {
 
       {/* Preset Selector Modal */}
       {showPresetsModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
           <div className="w-full max-w-xs bg-[#0d1017] border border-white/10 rounded-3xl p-5 shadow-2xl space-y-3 animate-in zoom-in-95">
             <h3 className="text-sm font-black text-white mb-2">Select Audio Preset</h3>
             <div className="space-y-1 max-h-64 overflow-y-auto">

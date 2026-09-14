@@ -6,21 +6,24 @@ import io
 import time
 from pathlib import Path
 
-BASE_DIR = Path(r"c:\Users\manan\Downloads\scrappin")
+BASE_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = BASE_DIR / "dist-releases"
 DIST_DIR.mkdir(parents=True, exist_ok=True)
 
 print("[*] ===============================================")
-print("[*] Packaging SheroFetch Universal Releases (v2.4)")
+print("[*] Packaging SheroFetch Universal Releases (v2.5)")
 print("[*] ===============================================")
 
 # 1. Package Windows Portable ZIP
-portable_zip_path = DIST_DIR / "SheroFetch-Windows-x64-Portable.zip"
+portable_zip_path = DIST_DIR / "SheroFetch-v2.5.0-Windows-x64-Portable.zip"
+portable_zip_path_legacy = DIST_DIR / "SheroFetch-Windows-x64-Portable.zip"
 print(f"\n[*] Creating Windows Portable Bundle: {portable_zip_path.name}...")
 
 exe_src = BASE_DIR / "SheroFetch-Windows-x64.exe"
 dll_src = BASE_DIR / "WebView2Loader.dll"
 bat_src = BASE_DIR / "launch_music_downloader.bat"
+setup_bat_src = BASE_DIR / "setup_windows_prerequisites.bat"
+readme_win_src = BASE_DIR / "README_WINDOWS.txt"
 req_src = BASE_DIR / "requirements.txt"
 
 python_scripts = [
@@ -69,6 +72,12 @@ with zipfile.ZipFile(portable_zip_path, 'w', compression=zipfile.ZIP_DEFLATED) a
     if bat_src.exists():
         zf.write(bat_src, arcname="launch_music_downloader.bat")
         print("  + Added: launch_music_downloader.bat")
+    if setup_bat_src.exists():
+        zf.write(setup_bat_src, arcname="setup_windows_prerequisites.bat")
+        print("  + Added: setup_windows_prerequisites.bat")
+    if readme_win_src.exists():
+        zf.write(readme_win_src, arcname="README_WINDOWS.txt")
+        print("  + Added: README_WINDOWS.txt")
     if req_src.exists():
         zf.write(req_src, arcname="requirements.txt")
         print("  + Added: requirements.txt")
@@ -82,6 +91,7 @@ with zipfile.ZipFile(portable_zip_path, 'w', compression=zipfile.ZIP_DEFLATED) a
     zf.writestr("README_PORTABLE.txt", readme_portable)
     print("  + Added: README_PORTABLE.txt")
 
+shutil.copy2(portable_zip_path, portable_zip_path_legacy)
 print(f"[+] Portable ZIP ready: {portable_zip_path} ({portable_zip_path.stat().st_size / (1024*1024):.2f} MB)")
 
 # 2. Copy Standalone Windows EXE
@@ -92,24 +102,26 @@ if exe_src.exists():
     print(f"[+] Copied: {dst_exe} ({dst_exe.stat().st_size / (1024*1024):.2f} MB)")
 
 # 3. Copy Latest Android APK (v2.4)
-print("\n[*] Staging Latest Verified Android APK (v2.4)...")
-apk_src = BASE_DIR / "SheroFetch-debug.apk"
-dst_apk1 = DIST_DIR / "SheroFetch-v2.4-FLAC.apk"
-dst_apk2 = DIST_DIR / "SheroFetch-debug.apk"
+print("\n[*] Staging Latest Verified Android APK (v2.5.0)...")
+apk_src = (BASE_DIR / "SheroFetch-latest.apk") if (BASE_DIR / "SheroFetch-latest.apk").exists() else (BASE_DIR / "SheroFetch-hybrid.apk")
+dst_apk1 = DIST_DIR / "SheroFetch-v2.5.0.apk"
+dst_apk2 = DIST_DIR / "SheroFetch-latest.apk"
+dst_apk3 = DIST_DIR / "SheroFetch-debug.apk"
+dst_apk4 = DIST_DIR / "SheroFetch-hybrid.apk"
 
 if apk_src.exists():
-    shutil.copy2(apk_src, dst_apk1)
-    shutil.copy2(apk_src, dst_apk2)
-    print(f"[+] Copied: {dst_apk1} ({dst_apk1.stat().st_size / (1024*1024):.2f} MB)")
-    print(f"[+] Copied: {dst_apk2} ({dst_apk2.stat().st_size / (1024*1024):.2f} MB)")
+    for d in [dst_apk1, dst_apk2, dst_apk3, dst_apk4]:
+        shutil.copy2(apk_src, d)
+        print(f"[+] Copied: {d.name} ({d.stat().st_size / (1024*1024):.2f} MB)")
 
 # 4. Build Linux Debian Package (.deb)
-deb_path = DIST_DIR / "sherofetch_2.4_all.deb"
+deb_path = DIST_DIR / "sherofetch_2.5.0_all.deb"
+deb_path_legacy = DIST_DIR / "sherofetch_2.4_all.deb"
 print(f"\n[*] Assembling Linux Debian Package: {deb_path.name}...")
 
 # Control file
 control_content = """Package: sherofetch
-Version: 2.4
+Version: 2.5.0
 Section: sound
 Priority: optional
 Architecture: all
@@ -225,6 +237,7 @@ with open(deb_path, 'wb') as deb_f:
     if len(data_tar_bytes) % 2 != 0:
         deb_f.write(b"\n")
 
+shutil.copy2(deb_path, deb_path_legacy)
 print(f"[+] Debian package ready: {deb_path} ({deb_path.stat().st_size / 1024:.1f} KB)")
 
 print("\n[*] ===============================================")

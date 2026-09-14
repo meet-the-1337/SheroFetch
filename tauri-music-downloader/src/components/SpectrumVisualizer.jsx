@@ -10,8 +10,7 @@ export function SpectrumVisualizer({ isPlaying = false }) {
     const ctx = canvas.getContext('2d')
     let animId
 
-    const render = () => {
-      animId = requestAnimationFrame(render)
+    const drawFrame = () => {
       const width = canvas.width
       const height = canvas.height
       ctx.clearRect(0, 0, width, height)
@@ -23,7 +22,7 @@ export function SpectrumVisualizer({ isPlaying = false }) {
 
       for (let i = 0; i < barCount; i++) {
         let val = freqData[i * step] || 0
-        if (!isPlaying) val = Math.max(4, Math.sin(Date.now() / 300 + i * 0.3) * 8 + 10)
+        if (!isPlaying) val = 8
 
         const barHeight = Math.max(4, (val / 255) * (height - 8))
         const x = i * (barWidth + 2)
@@ -35,16 +34,25 @@ export function SpectrumVisualizer({ isPlaying = false }) {
         grad.addColorStop(1, 'rgba(168, 85, 247, 1)')
 
         ctx.fillStyle = grad
-        ctx.shadowColor = '#00E5FF'
-        ctx.shadowBlur = isPlaying ? 8 : 2
         ctx.beginPath()
         ctx.roundRect(x, y, barWidth, barHeight, [3, 3, 0, 0])
         ctx.fill()
       }
     }
 
-    render()
-    return () => cancelAnimationFrame(animId)
+    if (isPlaying) {
+      const render = () => {
+        drawFrame()
+        animId = requestAnimationFrame(render)
+      }
+      render()
+    } else {
+      drawFrame()
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId)
+    }
   }, [isPlaying])
 
   return (
@@ -53,7 +61,7 @@ export function SpectrumVisualizer({ isPlaying = false }) {
         ref={canvasRef}
         width={320}
         height={180}
-        className="w-full h-full rounded-2xl bg-black/40 border border-white/10 backdrop-blur-xl"
+        className="w-full h-full rounded-2xl bg-[#080B10] border border-white/10"
       />
     </div>
   )

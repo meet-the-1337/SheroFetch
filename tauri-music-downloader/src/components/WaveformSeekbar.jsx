@@ -65,20 +65,16 @@ export function WaveformSeekbar({
       const isPlayed = i <= currentBarIdx
 
       if (isPlayed) {
-        // Played: Poweramp Electric Cyan Gradient with Neon Glow
+        // Played: Poweramp Electric Cyan Gradient
         const grad = ctx.createLinearGradient(0, centerY - barHeight, 0, centerY + barHeight)
         grad.addColorStop(0, '#38bdf8')
         grad.addColorStop(0.5, '#00e5ff')
         grad.addColorStop(1, '#0284c7')
 
         ctx.fillStyle = grad
-        ctx.shadowColor = '#00e5ff'
-        ctx.shadowBlur = isPlaying ? 5 : 2
       } else {
         // Unplayed: Poweramp Muted Slate Translucent
         ctx.fillStyle = 'rgba(255, 255, 255, 0.18)'
-        ctx.shadowColor = 'transparent'
-        ctx.shadowBlur = 0
       }
 
       // Upper & Lower Mirror Bar
@@ -91,8 +87,6 @@ export function WaveformSeekbar({
     const playheadX = Math.min(width - 2, Math.max(0, progress * width))
 
     // Vertical Needle Line
-    ctx.shadowColor = '#00e5ff'
-    ctx.shadowBlur = 10
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(playheadX - 1, 0, 2, height)
 
@@ -107,16 +101,8 @@ export function WaveformSeekbar({
   }, [peaks, progress, isPlaying])
 
   useEffect(() => {
-    let animId
-    const loop = () => {
-      renderCanvas()
-      if (isPlaying) {
-        animId = requestAnimationFrame(loop)
-      }
-    }
-    loop()
-    return () => cancelAnimationFrame(animId)
-  }, [renderCanvas, isPlaying])
+    renderCanvas()
+  }, [renderCanvas])
 
   const getTimeFromEvent = (e) => {
     const canvas = canvasRef.current

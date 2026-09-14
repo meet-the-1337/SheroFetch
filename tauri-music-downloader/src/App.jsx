@@ -41,30 +41,6 @@ export default function App() {
       const list = await invoke('get_library')
       if (Array.isArray(list) && list.length > 0) {
         setLibrary(list)
-
-        // Asynchronously resolve missing or local artwork for all tracks
-        let dirty = false
-        const updated = await Promise.all(list.map(async (t) => {
-          if (!t.cover_path || t.cover_path.startsWith('http://127.0.0.1') || t.cover_path.startsWith('http://localhost') || t.cover_path.endsWith('/cover.jpg')) {
-            try {
-              const q = encodeURIComponent(`${t.artist} ${t.track}`)
-              const r = await fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=1`)
-              const d = await r.json()
-              if (d?.results?.[0]?.artworkUrl100) {
-                const hiRes = d.results[0].artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg')
-                dirty = true
-                return { ...t, cover_path: hiRes, has_cover: true }
-              }
-            } catch {}
-          }
-          return t
-        }))
-        if (dirty) {
-          setLibrary(updated)
-          try {
-            localStorage.setItem('sherofetch_library', JSON.stringify(updated))
-          } catch {}
-        }
       }
     } catch (e) {
       console.warn('[Poweramp App] Library load notice:', e)
@@ -293,24 +269,27 @@ export default function App() {
     }
   }, [currentTrack?.id, currentTrack?.file_path, currentTrackIndex])
 
-  // 6. Callback when new track is acquired from the Extra Feature Window
-  const handleTrackInstalled = (newTrack) => {
+  // 6. Callback when new track is acquired
+  const handleTrackInstalled = (newTrack, shouldAutoplay = false) => {
     setLibrary((prev) => {
-      const exists = prev.some((t) => t.file_path === newTrack.file_path)
-      if (exists) return prev
+      const exists = prev.some((t) => t.file_path === newTrack.file_path || (t.id && t.id === newTrack.id))
+      if (exists) {
+        return prev.map((t) => (t.file_path === newTrack.file_path ? newTrack : t))
+      }
       return [newTrack, ...prev]
     })
-    // Auto-select newly acquired song and switch to player
-    setCurrentTrackIndex(0)
-    setIsPlaying(true)
-    setActiveTab('player')
 
-    // Force audio element to load the new track immediately
-    if (audioRef.current) {
-      const src = newTrack.file_url || newTrack.audio_stream_url || ''
-      audioRef.current.src = src
-      audioRef.current.load()
-      audioRef.current.play().catch(() => {})
+    if (shouldAutoplay) {
+      setCurrentTrackIndex(0)
+      setIsPlaying(true)
+      setActiveTab('player')
+
+      if (audioRef.current) {
+        const src = newTrack.file_url || newTrack.audio_stream_url || ''
+        audioRef.current.src = src
+        audioRef.current.load()
+        audioRef.current.play().catch(() => {})
+      }
     }
   }
 
@@ -363,13 +342,23 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'acquire' && (
+          <AcquireModal
+            isOpen={true}
+            inline={true}
+            onClose={() => setActiveTab('library')}
+            onTrackInstalled={(track) => handleTrackInstalled(track, false)}
+            invokeFn={invoke}
+          />
+        )}
+
         {activeTab === 'library' && (
           <LibraryView
             library={library}
             currentTrack={currentTrack}
             isPlaying={isPlaying}
             onSelectTrack={handleSelectTrack}
-            onOpenAcquire={() => setIsAcquireOpen(true)}
+            onOpenAcquire={() => setActiveTab('acquire')}
             onOpenProfile={() => setIsProfileOpen(true)}
             soulseekProfile={soulseekProfile}
           />
@@ -381,7 +370,7 @@ export default function App() {
             currentTrack={currentTrack}
             isPlaying={isPlaying}
             onSelectTrack={handleSelectTrack}
-            onOpenAcquire={() => setIsAcquireOpen(true)}
+            onOpenAcquire={() => setActiveTab('acquire')}
             onOpenProfile={() => setIsProfileOpen(true)}
             soulseekProfile={soulseekProfile}
             initialCategory="all"
@@ -404,17 +393,20 @@ export default function App() {
           onTabChange={setActiveTab}
           onTogglePlay={togglePlay}
           onOpenPlayer={() => setActiveTab('player')}
-          onOpenAcquire={() => setIsAcquireOpen(true)}
+          onOpenAcquire={() => setActiveTab('acquire')}
         />
       )}
 
-      {/* Extra Feature Window: SheroFetch Acquisition Engine Modal */}
-      <AcquireModal
-        isOpen={isAcquireOpen}
-        onClose={() => setIsAcquireOpen(false)}
-        onTrackInstalled={handleTrackInstalled}
-        invokeFn={invoke}
-      />
+      {/* Extra Feature Window: SheroFetch Acquisition Engine Modal (Popup Fallback) */}
+      {isAcquireOpen && activeTab !== 'acquire' && (
+        <AcquireModal
+          isOpen={isAcquireOpen}
+          inline={false}
+          onClose={() => setIsAcquireOpen(false)}
+          onTrackInstalled={(track) => handleTrackInstalled(track, false)}
+          invokeFn={invoke}
+        />
+      )}
 
       {/* Profile & Open-Source Hub Modal */}
       <ProfileModal

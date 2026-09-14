@@ -62,6 +62,11 @@ def calculate_similarity(s1: str, s2: str) -> float:
 
 def clean_query(query: str) -> str:
     q = query.strip()
+    q = re.sub(r'https?://\S+', '', q).strip()
+    q = re.sub(r'^\s*(?:\[\s*\d{1,3}\s*\]|\d{1,3}\s*[-.:)]|\d{1,3}\s+)\s*', '', q).strip()
+    q = re.sub(r'(?i)\s*[\(\[](?:[^\]\)]*?\b(?:feat\.?|ft\.?|with|official\s*(?:video|audio|music\s*video|track)|full\s*album|remaster(?:ed)?|deluxe(?:\s*edition)?|hd|hq|4k|lyric\s*video|lyrics?)\b[^\]\)]*?)[\)\]]', '', q).strip()
+    q = re.sub(r'(?i)\s*-\s*(?:remaster(?:ed)?|\d{4}\s*remaster(?:ed)?)\b.*$', '', q).strip()
+    q = re.sub(r'(?i)\b(?:feat\.?|ft\.?)\s+[a-zA-Z0-9\s,&_]+(?=\s*-|\s*$)', '', q).strip()
     q = re.sub(r'(?i)\s+(song|music|track|audio|video|official video)$', '', q).strip()
     q = re.sub(r'(?i)\bshape of u\b', 'shape of you', q)
     q = re.sub(r'(?i)\bweekend\b', 'the weeknd', q)
@@ -72,6 +77,17 @@ def clean_query(query: str) -> str:
     q = re.sub(r'(?i)\bbeyounce\b', 'beyonce', q)
     q = re.sub(r'(?i)\bcold play\b', 'coldplay', q)
     q = re.sub(r'(?i)\bbrahmastra\b', '', q).strip()
+
+    # Handle multi-dash uploader baggage e.g. 'Yeyden Zoe Vega - 01 - Born To Die - Lana Del Rey'
+    if ' - ' in q:
+        parts = [p.strip() for p in q.split(' - ') if p.strip()]
+        parts = [p for p in parts if not p.isdigit()]
+        if len(parts) >= 3:
+            q = f"{parts[-1]} - {parts[-2]}"
+        elif len(parts) == 2:
+            q = f"{parts[0]} - {parts[1]}"
+
+    q = re.sub(r'^\s*(?:\[\s*\d{1,3}\s*\]|\d{1,3}\s*[-.:)]|\d{1,3}\s+)\s*', '', q).strip()
     return q
 
 def is_karaoke_or_tribute(title: str, artist: str) -> bool:
@@ -125,6 +141,51 @@ def query_itunes_catalog(term: str, entity: str = "album", limit: int = 10) -> l
 def match_song(query: str, query_type: str = "ambiguous", preferred_format: str = "flac") -> dict:
     raw_q = query.strip()
     
+    # 0. URL Detection: Direct resolution for song and playlist links
+    if raw_q.startswith("http://") or raw_q.startswith("https://") or raw_q.startswith("spotify:") or "youtube.com" in raw_q or "youtu.be" in raw_q:
+        try:
+            import playlist_resolver
+            p_res = playlist_resolver.resolve_playlist(raw_q)
+            if p_res and p_res.get("tracks"):
+                tracks = p_res["tracks"]
+                results = []
+                for trk in tracks:
+                    results.append({
+                        "artist": trk.get("artist") or "Unknown Artist",
+                        "track": trk.get("title") or "Unknown Track",
+                        "title": trk.get("title") or "Unknown Track",
+                        "album": trk.get("album") or "Official Studio Release",
+                        "release_type": trk.get("album") or "Official Studio Release",
+                        "duration": trk.get("duration") or 210.0,
+                        "confidence": 1.0,
+                        "popularity_score": 1.0,
+                        "mbid": trk.get("code") or "URL-MATCH",
+                        "code": trk.get("code"),
+                        "cover_url": trk.get("cover_url"),
+                        "direct_url": trk.get("direct_url"),
+                        "score": 1.0,
+                        "source": trk.get("source", "url")
+                    })
+                first = results[0]
+                return {
+                    "mode": "strict",
+                    "results": results,
+                    "artist": first["artist"],
+                    "track": first["track"],
+                    "title": first["title"],
+                    "mbid": first["mbid"],
+                    "code": first.get("code"),
+                    "direct_url": first.get("direct_url"),
+                    "duration": first["duration"],
+                    "confidence": 1.0,
+                    "popularity_score": 1.0,
+                    "release_type": first["album"],
+                    "cover_url": first.get("cover_url"),
+                    "language": "en"
+                }
+        except Exception as e:
+            pass
+
     # 1. Negative, Derivative & Garbage Filter
     if is_derivative_or_garbage(raw_q):
         return {
@@ -188,11 +249,13 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
             "listeners": 25000
         })
 
-    # Optional iTunes fallback/enrichment
-    itunes_items = query_itunes_catalog(clean_q, entity="song", limit=4)
+    # Optional iTunes catalog (Official studio catalog with accurate durations and 1000x1000 artwork)
+    itunes_items = query_itunes_catalog(clean_q, entity="song", limit=8)
     for it in itunes_items:
         raw_cover = it.get("artworkUrl100") or ""
-        cover_url = raw_cover.replace("100x100bb.jpg", "1000x1000bb.jpg") if raw_cover else None
+        cover_url = raw_cover.replace("100x100bb.jpg", "1000x1000bb.jpg").replace("100x100bb", "1000x1000bb") if raw_cover else None
+        dur_ms = it.get("trackTimeMillis") or 0
+        dur_sec = round(dur_ms / 1000.0, 1) if dur_ms > 0 else 220.0
         raw_items.append({
             "artist": it.get("artistName"),
             "title": it.get("trackName"),
@@ -200,7 +263,8 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
             "type": "song",
             "mbid": str(it.get("trackId") or ""),
             "cover": cover_url,
-            "listeners": 150000
+            "duration": dur_sec,
+            "listeners": 1500000
         })
 
     for idx, item in enumerate(raw_items):
@@ -242,17 +306,21 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
         if clean_a in {'various artists', 'various'}:
             pop_score = 0.10
 
-        t_words = [w for w in clean_t.split() if len(w) > 2]
-        a_words = [w for w in clean_a.split() if len(w) > 2 and w not in clean_t]
+        STOP_WORDS = {'the', 'and', 'feat', 'version', 'audio', 'video', 'from', 'with'}
+        t_words = [w for w in clean_t.split() if len(w) > 2 and w not in STOP_WORDS]
+        a_words = [w for w in clean_a.split() if len(w) > 2 and w not in clean_t and w not in STOP_WORDS]
 
-        art_in_q = any(w in q_norm for w in a_words) if a_words else False
-        trk_in_q = any(w in q_norm for w in t_words) if t_words else False
+        q_words = set(re.findall(r'\b[a-z0-9]+\b', q_norm))
+        art_in_q = any(w in q_words for w in a_words) if a_words else False
+        trk_in_q = any(w in q_words for w in t_words) if t_words else False
 
         t_sim = calculate_similarity(clean_t, q_norm)
         if clean_t in q_norm or q_norm in clean_t:
             t_sim = 1.0
         elif trk_in_q:
             t_sim = max(t_sim, 0.88)
+        else:
+            t_sim = min(t_sim, 0.25)
 
         a_sim = 0.50
         if clean_a in q_norm or q_norm in clean_a:
@@ -260,11 +328,28 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
         elif art_in_q:
             a_sim = 0.90
 
-        score = (0.45 * pop_score) + (0.35 * t_sim) + (0.20 * a_sim)
+        score = (0.20 * pop_score) + (0.55 * t_sim) + (0.25 * a_sim)
         if art_in_q and trk_in_q:
             score += 0.40
-        elif trk_in_q or art_in_q:
-            score += 0.15
+        elif trk_in_q:
+            score += 0.25
+        elif art_in_q:
+            score -= 0.30
+
+        # Strict Canonical Original Studio Check:
+        # Detect if candidate is live, remix, acoustic, karaoke, session, demo, or tribute
+        combined_text = f"{t_name} {item.get('album', '')}".lower()
+        is_derivative = bool(re.search(r'\b(live|remix|acoustic|karaoke|tribute|cover|instrumental|demo|session|rehearsal|deluxe edition bonus|bbc session|club mix)\b', combined_text))
+        query_wants_derivative = bool(re.search(r'\b(live|remix|acoustic|karaoke|tribute|cover|instrumental|demo|session|rehearsal|club mix)\b', raw_q.lower()))
+
+        if is_derivative and not query_wants_derivative:
+            score -= 0.65  # Heavily downrank derivative versions so original studio recording is always #1!
+        elif not is_derivative and not query_wants_derivative:
+            score += 0.25  # Big bonus for pure canonical studio recording
+
+        # Bonus for items with verified cover art
+        if item.get("cover") and "lastfm" not in item.get("cover"):
+            score += 0.10
 
         conf = min(0.98, max(0.35, round(score, 2)))
 
@@ -274,7 +359,7 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
             "title": t_name,
             "album": item.get("album") or t_name,
             "mbid": item.get("mbid"),
-            "duration": 220.0,
+            "duration": item.get("duration", 220.0),
             "confidence": conf,
             "popularity_score": round(pop_score, 3),
             "release_type": item.get("album") or t_name,

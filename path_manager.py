@@ -22,11 +22,19 @@ else:
 DEFAULT_INDEX_FILE = DEFAULT_CONFIG_DIR / "index.json"
 
 
+WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+}
+
+
 def sanitize_component(val: Optional[str], fallback: str) -> str:
     """
     Sanitizes filesystem path components:
     - Removes invalid filesystem characters: < > : " / \\ | ? * and control chars
     - Normalizes spacing and strips leading/trailing spaces and dots
+    - Enforces Windows reserved name protection (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
     - Enforces fallback if empty or whitespace
     """
     if not val or not str(val).strip():
@@ -39,6 +47,11 @@ def sanitize_component(val: Optional[str], fallback: str) -> str:
     s = re.sub(r'\s+', ' ', s).strip()
     # Strip leading or trailing dots
     s = s.strip('.')
+
+    # Windows reserved device names check
+    root_part = s.split('.')[0].upper()
+    if root_part in WINDOWS_RESERVED_NAMES:
+        s = f"{s}_"
 
     if not s:
         return fallback
@@ -69,15 +82,33 @@ def build_path(
     return save_dir
 
 
+def resolve_bunch_folder(base_dir: Path, playlist_name: Optional[str] = None) -> str:
+    """
+    Returns sanitized playlist name if provided.
+    If playlist_name is empty/None or resolves to empty,
+    returns auto-incrementing new1, new2, new3... based on existing folders in base_dir.
+    """
+    if playlist_name and str(playlist_name).strip():
+        sanitized = sanitize_component(playlist_name, fallback="")
+        if sanitized:
+            return sanitized
+
+    idx = 1
+    while (base_dir / f"new{idx}").exists():
+        idx += 1
+    return f"new{idx}"
+
+
 def verify_path_guard(
     save_dir: Path,
     base_dir: Optional[Union[str, Path]] = None,
     artist: Optional[str] = None,
-    album: Optional[str] = None
+    album: Optional[str] = None,
+    is_playlist: bool = False
 ) -> Tuple[bool, str]:
     """
     Verification guard:
-    1. Assert save_dir contains both artist and album in its hierarchy
+    1. Assert save_dir contains both artist and album in its hierarchy (or is valid playlist folder)
     2. Assert save_dir is strictly inside base_dir (no path traversal or directory leakage)
     Returns (True, "OK") or (False, error_message).
     """
@@ -88,15 +119,18 @@ def verify_path_guard(
 
     resolved_save = Path(save_dir).expanduser().resolve()
 
-    clean_artist = sanitize_component(artist, fallback="Unknown Artist")
-    clean_album = sanitize_component(album, fallback="Unknown Album")
-
     # Guard 1: Must be inside base_dir
     try:
         resolved_save.relative_to(resolved_base)
     except ValueError:
         err = f"Verification Guard Violation: Target path '{resolved_save}' leaks outside base directory '{resolved_base}'"
         return False, err
+
+    if is_playlist:
+        return True, "OK"
+
+    clean_artist = sanitize_component(artist, fallback="Unknown Artist")
+    clean_album = sanitize_component(album, fallback="Unknown Album")
 
     # Guard 2: Hierarchy must strictly end in sanitized artist and album
     if resolved_save.name != clean_album or resolved_save.parent.name != clean_artist:
@@ -129,15 +163,28 @@ def update_library_index(entry: Dict[str, Any], index_file: Optional[Path] = Non
         except Exception:
             items = []
 
-    # Deduplicate existing entry matching file_path or id
+    # Deduplicate existing entry matching file_path, id, or same folder+(artist,track)
     entry_id = entry.get("id") or entry.get("mbid")
     entry_path = entry.get("file_path")
-    items = [
-        it for it in items
-        if not (entry_id and (it.get("id") == entry_id or it.get("mbid") == entry_id))
-        and not (entry_path and it.get("file_path") == entry_path)
-    ]
+    entry_folder = entry.get("folder_path")
+    entry_artist = (entry.get("artist") or "").lower()
+    entry_track = (entry.get("track") or "").lower()
 
+    filtered_items = []
+    for it in items:
+        p = it.get("file_path")
+        if p and not Path(p).exists():
+            continue
+        if entry_folder and it.get("folder_path") == entry_folder:
+            if (it.get("artist") or "").lower() == entry_artist and (it.get("track") or "").lower() == entry_track:
+                continue
+        if entry_id and (it.get("id") == entry_id or it.get("mbid") == entry_id):
+            continue
+        if entry_path and it.get("file_path") == entry_path:
+            continue
+        filtered_items.append(it)
+
+    items = filtered_items
     items.insert(0, entry)
 
     # Atomic write to avoid corruption

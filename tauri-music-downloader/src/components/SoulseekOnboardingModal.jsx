@@ -47,8 +47,8 @@ export function SoulseekOnboardingModal({ isOpen, onClose, onSuccess, invokeFn }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in select-none">
-      <div className="relative w-full max-w-md bg-zinc-950 border border-cyan-500/30 rounded-3xl p-6 shadow-[0_0_50px_rgba(0,229,255,0.15)] flex flex-col gap-5 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xl animate-fade-in select-none">
+      <div className="relative w-full max-w-md glass-panel border border-cyan-500/40 rounded-3xl p-6 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(0,229,255,0.2)] flex flex-col gap-5 overflow-hidden animate-slideUp">
         
         {/* Top Close Button */}
         <button
@@ -61,7 +61,7 @@ export function SoulseekOnboardingModal({ isOpen, onClose, onSuccess, invokeFn }
         </button>
 
         {/* Ambient Top Glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-20 bg-cyan-500/20 blur-3xl pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-20 bg-cyan-500/10 pointer-events-none rounded-full" />
 
         {/* Header Badge & Title */}
         <div className="flex flex-col items-center text-center gap-2">

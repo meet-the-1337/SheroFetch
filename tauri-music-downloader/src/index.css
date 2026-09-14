@@ -3,51 +3,107 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --glass-bg: rgba(13, 17, 26, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 0.2);
+  }
+
   body {
     @apply bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden select-none;
-    background-color: #0b0f17;
+    background-color: #07090e;
+    background-image: 
+      radial-gradient(circle at 50% 0%, rgba(30, 41, 59, 0.5) 0%, transparent 60%),
+      radial-gradient(circle at 10% 80%, rgba(15, 23, 42, 0.8) 0%, transparent 50%),
+      radial-gradient(circle at 90% 90%, rgba(20, 28, 48, 0.4) 0%, transparent 40%);
+    background-attachment: fixed;
   }
 }
 
-/* Feishin custom sleek scrollbar */
+/* Glassmorphic Ultra-Smooth Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.2);
-  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
 }
 
-.feishin-glass {
-  background: rgba(15, 23, 42, 0.75);
+/* Modern Glassmorphic Primitives */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid var(--glass-border);
+  box-shadow: 
+    0 16px 40px -8px rgba(0, 0, 0, 0.75),
+    inset 0 1px 1px 0 var(--glass-highlight);
+}
+
+.glass-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 100%);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-card:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.03) 100%);
+  border-color: rgba(0, 229, 255, 0.35);
+  transform: translateY(-2px) scale(1.005);
+  box-shadow: 
+    0 8px 30px rgba(0, 0, 0, 0.6),
+    0 0 15px rgba(0, 229, 255, 0.15),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2);
 }
 
-.feishin-card {
-  background: rgba(26, 32, 44, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+.glass-pill {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 1px rgba(255, 255, 255, 0.12);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.feishin-card:hover {
-  background: rgba(30, 41, 59, 0.8);
-  border-color: rgba(99, 102, 241, 0.4);
-  transform: translateY(-2px);
+.glass-pill:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(0, 229, 255, 0.4);
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+}
+.glass-pill:active {
+  transform: scale(0.96);
 }
 
-/* Android Safe Area & Mobile Optimizations */
-:root {
-  --sat: env(safe-area-inset-top, 0px);
-  --sab: env(safe-area-inset-bottom, 0px);
+/* Glass Neon Highlights */
+.glow-cyan {
+  box-shadow: 0 0 20px -3px rgba(0, 229, 255, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+.glow-emerald {
+  box-shadow: 0 0 20px -3px rgba(16, 185, 129, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+.glow-purple {
+  box-shadow: 0 0 20px -3px rgba(168, 85, 247, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.3);
 }
 
+/* Fluid Smooth Animations */
 @keyframes slideUp {
   from {
     transform: translateY(20px);
@@ -60,7 +116,7 @@
 }
 
 .animate-slideUp {
-  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Prevent unwanted pull-to-refresh on mobile app webview */
@@ -74,81 +130,125 @@ html, body {
 /* Poweramp v3 / v1013 Audiophile Design System */
 .bg-poweramp-base {
   background-color: #060709;
-  background-image: radial-gradient(circle at 50% 15%, rgba(24, 32, 47, 0.45) 0%, #060709 75%);
+  background-image: 
+    radial-gradient(circle at 50% 15%, rgba(24, 32, 47, 0.55) 0%, #060709 75%),
+    radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 15% 85%, rgba(0, 229, 255, 0.04) 0%, transparent 50%);
 }
 
 /* Tactile Embossed Button */
 .btn-poweramp-tactile {
-  background: linear-gradient(180deg, #181d26 0%, #0d1017 100%);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.12),
-              inset 0 -1px 2px rgba(0, 0, 0, 0.8),
-              0 4px 10px rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(30, 38, 50, 0.8) 0%, rgba(13, 16, 23, 0.9) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 
+    inset 0 1px 1px rgba(255, 255, 255, 0.18),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.8),
+    0 4px 12px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-poweramp-tactile:active {
   background: linear-gradient(180deg, #0d1017 0%, #151a24 100%);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9),
-              0 1px 3px rgba(0, 0, 0, 0.4);
-  transform: scale(0.96);
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.9),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+  transform: scale(0.95);
 }
 
 /* Iconic Circular Play/Pause Dome */
 .poweramp-play-dome {
-  background: radial-gradient(circle at 35% 30%, #1f2735 0%, #0c1018 70%);
-  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.25),
-              inset 0 -3px 5px rgba(0, 0, 0, 0.9),
-              0 0 22px rgba(0, 229, 255, 0.35),
-              0 8px 20px rgba(0, 0, 0, 0.75);
-  border: 2px solid rgba(0, 229, 255, 0.75);
+  background: radial-gradient(circle at 35% 30%, rgba(35, 48, 68, 0.9) 0%, rgba(12, 16, 24, 0.95) 70%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 
+    inset 0 2px 3px rgba(255, 255, 255, 0.35),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.9),
+    0 0 28px rgba(0, 229, 255, 0.4),
+    0 10px 25px rgba(0, 0, 0, 0.8);
+  border: 2px solid rgba(0, 229, 255, 0.85);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.poweramp-play-dome:hover {
+  box-shadow: 
+    inset 0 2px 4px rgba(255, 255, 255, 0.45),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.9),
+    0 0 36px rgba(0, 229, 255, 0.6),
+    0 12px 30px rgba(0, 0, 0, 0.9);
+  transform: scale(1.04);
 }
 
 .poweramp-play-dome:active {
   background: radial-gradient(circle at 50% 50%, #0c1018 0%, #161c28 100%);
-  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.95),
-              0 0 15px rgba(0, 229, 255, 0.2);
+  box-shadow: 
+    inset 0 3px 6px rgba(0, 0, 0, 0.95),
+    0 0 18px rgba(0, 229, 255, 0.3);
   transform: scale(0.93);
 }
 
 /* LED Status Indicator Dot */
 .led-active {
-  box-shadow: 0 0 6px #00e5ff, 0 0 12px #00e5ff;
+  box-shadow: 0 0 6px #00e5ff, 0 0 14px #00e5ff;
 }
 
 .led-amber {
-  box-shadow: 0 0 6px #f59e0b, 0 0 12px #f59e0b;
+  box-shadow: 0 0 6px #f59e0b, 0 0 14px #f59e0b;
+}
+
+.led-emerald {
+  box-shadow: 0 0 6px #10b981, 0 0 14px #10b981;
 }
 
 /* Poweramp High-Density Album Art Card */
 .poweramp-art-frame {
-  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.9),
-              0 0 0 1px rgba(255, 255, 255, 0.1),
-              inset 0 1px 1px rgba(255, 255, 255, 0.25);
+  box-shadow: 
+    0 20px 50px rgba(0, 0, 0, 0.95),
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 1px 1px rgba(255, 255, 255, 0.3);
   border-radius: 28px;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+}
+.poweramp-art-frame:hover {
+  transform: scale(1.015);
+  box-shadow: 
+    0 25px 60px rgba(0, 0, 0, 0.98),
+    0 0 25px rgba(0, 229, 255, 0.2),
+    0 0 0 1px rgba(0, 229, 255, 0.4),
+    inset 0 1px 2px rgba(255, 255, 255, 0.4);
 }
 
 /* Poweramp Floating Bottom Dock */
 .poweramp-bottom-dock {
-  background: rgba(14, 17, 24, 0.92);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(14, 17, 24, 0.85);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 28px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.9),
-              inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  box-shadow: 
+    0 16px 45px rgba(0, 0, 0, 0.9),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2);
 }
 
 /* Poweramp Rounded Pill Button */
 .poweramp-pill-btn {
-  background: rgba(26, 32, 44, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(26, 32, 44, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.poweramp-pill-btn:hover {
+  background: rgba(40, 52, 72, 0.85);
+  border-color: rgba(0, 229, 255, 0.4);
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.2);
 }
 .poweramp-pill-btn:active {
   transform: scale(0.94);
-  background: rgba(40, 50, 68, 0.9);
+  background: rgba(40, 50, 68, 0.95);
 }
 
 /* Poweramp Equalizer Vertical Fader Thumb */
@@ -166,18 +266,14 @@ html, body {
   height: 48px;
   border-radius: 12px;
   background: linear-gradient(180deg, #2a3444 0%, #111620 100%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.35);
   position: relative;
+  transition: all 0.15s ease;
 }
-
-.poweramp-eq-fader::-webkit-slider-thumb:after {
-  content: "";
-  display: block;
-  width: 12px;
-  height: 2px;
-  background: #ffffff;
-  border-radius: 1px;
+.poweramp-eq-fader::-webkit-slider-thumb:hover {
+  border-color: #00e5ff;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.5), 0 4px 12px rgba(0, 0, 0, 0.8);
 }
 
 

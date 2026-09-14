@@ -97,8 +97,8 @@ export function ProfileModal({
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-md animate-fade-in select-none">
-      <div className="relative w-full max-w-md max-h-[92vh] bg-zinc-950 border border-white/10 rounded-3xl p-5 shadow-2xl flex flex-col gap-4 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-2xl animate-fade-in select-none">
+      <div className="relative w-full max-w-md max-h-[92vh] glass-panel border border-white/10 rounded-3xl p-5 shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col gap-4 overflow-hidden animate-slideUp">
         
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
