@@ -260,7 +260,7 @@ def run_sockseek_query(
 
     u = os.environ.get("SOULSEEK_USERNAME")
     p = os.environ.get("SOULSEEK_PASSWORD")
-    if not u or u == "manansingahl":
+    if not u or u == "user_1337":
         # Generate clean ephemeral session ID to prevent multi-login kicks from Soulseek server
         u = f"sf_{random.randint(100000, 999999)}"
         p = f"pass_{random.randint(100000, 999999)}"
