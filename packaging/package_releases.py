@@ -125,7 +125,7 @@ Version: 2.5.0
 Section: sound
 Priority: optional
 Architecture: all
-Maintainer: Meet Singhal <msinghal1_be24@thapar.edu>
+Maintainer: meet-the-1337 <meet-the-1337@users.noreply.github.com>
 Installed-Size: 10240
 Depends: python3, python3-requests, python3-mutagen, python3-pil, ffmpeg
 Homepage: https://github.com/meet-the-1337/SheroFetch
