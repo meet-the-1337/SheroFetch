@@ -151,17 +151,20 @@ pip3 install -r requirements.txt
 
 ### 🤖 Android (Termux backend server)
 
-Run the backend directly on the phone so the app works with no PC:
+Run the full backend on the phone, including Soulseek, with no PC:
 
 ```bash
-pkg install -y python ffmpeg chromaprint python-pillow rust binutils
-pip install yt-dlp requests mutagen fastapi uvicorn pydantic
-git clone https://github.com/meet-the-1337/sherofetch.git ~/sherofetch
-~/sherofetch/termux/sherofetch-server.sh start   # stop | status | restart
+pkg install -y git && git clone https://github.com/meet-the-1337/sherofetch.git ~/sherofetch
+bash ~/sherofetch/termux/setup.sh     # deps, native sockseek build, boot hook, starts server
+sherofetch-server status              # start | stop | restart | logs | token | install-boot
 ```
 
-The server listens on `0.0.0.0:5050` and saves to `/sdcard/Music/SheroFetch`
-(override with `SHEROFETCH_PORT` / `SHEROFETCH_MUSIC_DIR`). Logs: `~/sherofetch_server.log`.
+- The SheroFetch app on the same phone connects to `http://127.0.0.1:5050` automatically.
+- Other devices on your Wi-Fi use `http://<phone-ip>:5050` plus the token from `sherofetch-server token`
+  (Profile → Backend Server in the app, or header `X-SheroFetch-Token`).
+- Auto-start after reboot: install **Termux:Boot** from the same source as Termux and open it once.
+- Music is saved to `/sdcard/Music/SheroFetch` (`SHEROFETCH_MUSIC_DIR` to change).
+- Soulseek login is read from `~/.config/sockseek/sockseek.conf` (`username = …`, `password = …`, chmod 600).
 
 ### Backend server (any platform)
 
