@@ -91,16 +91,109 @@
 
 ---
 
-## 📦 Downloads & Releases
+## 📦 Installation & Packages
 
-### 📱 Android (Universal APK)
-- **[SheroFetch-latest.apk](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.5.0/SheroFetch-latest.apk)** (4.9 MB) — **v2.5.0 Standalone Production Release.** Features 24/7 Cloudflare P2P Gateway, on-device flash scanner, MediaStore sync, and bit-perfect FLAC downloads on 4G/5G/WiFi.
+### 🐧 Linux (Arch Linux, Ubuntu, Debian, Fedora)
 
-### 🪟 Windows (x64)
-- **[SheroFetch-Windows-x64-Portable.zip](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.5.0/SheroFetch-Windows-x64-Portable.zip)** (11.6 MB) — Zero-prerequisite portable bundle. Unzip and run!
+#### 1. Quick CLI-Only Mode (All Distros)
+```bash
+git clone https://github.com/meet-the-1337/sherofetch.git
+cd sherofetch
+pip install -r requirements.txt
+./sherofetch "Avicii - Waiting For Love"
+```
 
-### 🐧 Linux
-- **[sherofetch_2.5.0_amd64.deb](https://github.com/meet-the-1337/SheroFetch/releases/download/v2.5.0/sherofetch_2.5.0_amd64.deb)**
+#### 2. Debian / Ubuntu (`.deb`)
+```bash
+# Download the latest .deb from releases or build with packaging/package_deb.sh:
+sudo dpkg -i dist-packages/sherofetch_1.0.2_amd64.deb
+sudo apt-get install -f  # resolves ffmpeg, yt-dlp dependencies
+```
+Provides both `sherofetch` in terminal and `SheroFetch` in application menu.
+
+#### 3. Arch Linux (`.pkg.tar.zst` / AUR)
+```bash
+# Install the built package:
+sudo pacman -U dist-packages/sherofetch-bin-1.0.2-1-x86_64.pkg.tar.zst
+```
+
+---
+
+### 🪟 Windows (CLI & Desktop)
+
+#### 1. Prerequisites (via winget)
+```powershell
+winget install Gyan.FFmpeg yt-dlp.yt-dlp Python.Python.3.12
+```
+
+#### 2. Run CLI
+```cmd
+py -m pip install -r requirements.txt
+sherofetch.cmd "Avicii - Waiting For Love"
+sherofetch.cmd --playlist "https://youtube.com/playlist?list=..."
+```
+
+#### 3. Build Windows Desktop GUI
+```cmd
+packaging\build_windows.bat
+```
+
+---
+
+### 🍎 macOS (CLI)
+```bash
+brew install ffmpeg yt-dlp chromaprint
+pip3 install -r requirements.txt
+./sherofetch "Avicii - Waiting For Love"
+```
+
+---
+
+### 🤖 Android (Termux backend server)
+
+Run the backend directly on the phone so the app works with no PC:
+
+```bash
+pkg install -y python ffmpeg chromaprint python-pillow rust binutils
+pip install yt-dlp requests mutagen fastapi uvicorn pydantic
+git clone https://github.com/meet-the-1337/sherofetch.git ~/sherofetch
+~/sherofetch/termux/sherofetch-server.sh start   # stop | status | restart
+```
+
+The server listens on `0.0.0.0:5050` and saves to `/sdcard/Music/SheroFetch`
+(override with `SHEROFETCH_PORT` / `SHEROFETCH_MUSIC_DIR`). Logs: `~/sherofetch_server.log`.
+
+### Backend server (any platform)
+
+```bash
+pip install -e .
+sherofetch-server --host 127.0.0.1 --port 5050
+```
+
+---
+
+## 💻 CLI Usage
+
+```bash
+# Interactive setup on first run (Soulseek credentials, Gemini key, format)
+sherofetch "Artist - Song Name"
+
+# Download a single YouTube or track URL
+sherofetch "https://www.youtube.com/watch?v=..."
+
+# Download an entire playlist with automatic progress tracking
+sherofetch --playlist "https://youtube.com/playlist?list=..."
+
+# Specify preferred format (opus, flac, mp3)
+sherofetch --format flac "Queen - Bohemian Rhapsody"
+
+# Re-run interactive onboarding / update credentials
+sherofetch --config
+
+# Diagnose system tools (ffmpeg, yt-dlp, fpcalc, soulseek)
+sherofetch --check
+```
+
 
 ---
 

@@ -1,12 +1,15 @@
 import os
 import sys
+import re
 import subprocess
 import shutil
 import json
+import hashlib
+import urllib.parse
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -36,9 +39,17 @@ class LoginRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     query: str
-    preferred_format: str = "flac"
+    preferred_format: str = "opus"
     override_album: Optional[str] = None
     selection_index: int = 0
+    exact_url: Optional[str] = None
+    exact_title: Optional[str] = None
+    exact_artist: Optional[str] = None
+
+class TitaniumVerifyRequest(BaseModel):
+    query: str
+    expected_duration: Optional[float] = None
+    preferred_format: str = "opus"
 
 @app.get("/")
 def root():
@@ -90,41 +101,27 @@ def soulseek_login(req: LoginRequest):
     if not u or not p:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
-    # Run authentic test against Soulseek server via sockseek CLI
-    cmd = [
-        SOCKSEEK_BIN,
-        "-s", "test",
-        "--user", u,
-        "--pass", p,
-        "--search-timeout", "1000",
-        "--connect-timeout", "6000",
-        "--no-progress"
-    ]
-    try:
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=10)
-        out = proc.stdout or ""
-        if "INVALIDPASS" in out or "rejected login attempt" in out:
+    # Run authentic test against Soulseek server directly
+    is_valid, reason = checkpoint4_pipeline.verify_soulseek_credentials(u, p, timeout_sec=3.5)
+    if not is_valid:
+        if reason == "INVALIDPASS":
             return JSONResponse(
                 status_code=401,
                 content={
                     "success": False,
-                    "error": "The Soulseek server (server.slsknet.org) rejected login: INVALID PASSWORD.",
+                    "error": f"The Soulseek server (server.slsknet.org) rejected login: INVALID PASSWORD for user '{u}'.",
                     "status": "Authentication Failed"
                 }
             )
-        elif "Cannot connect to server" in out:
+        else:
             return JSONResponse(
                 status_code=503,
                 content={
                     "success": False,
-                    "error": "Cannot connect to Soulseek server (server.slsknet.org:2242). Network unreachable.",
+                    "error": f"Soulseek network authentication failed: {reason}",
                     "status": "Network Error"
                 }
             )
-    except subprocess.TimeoutExpired:
-        pass
-    except Exception as e:
-        print(f"Error testing soulseek credentials: {e}")
 
     # Success: Save credentials in environment and sockseek.conf
     os.environ["SOULSEEK_USERNAME"] = u
@@ -213,91 +210,244 @@ def search_tracks(query: str = Body(..., embed=True)):
     q = query.strip()
     if not q:
         return {"candidates": []}
-    import match_song
-    res = match_song.match_song(q)
-    return res
+    try:
+        import match_song
+        res = match_song.match_song(q)
+        return res
+    except Exception as e:
+        return {"status": "error", "reason": str(e), "candidates": []}
+
+@app.get("/api/stream/resolve")
+def resolve_stream(url: Optional[str] = Query(None), videoId: Optional[str] = Query(None)):
+    """Resolve direct playable audio stream URL using yt-dlp on the PC node."""
+    target = url or (f"https://www.youtube.com/watch?v={videoId}" if videoId else None)
+    if not target:
+        raise HTTPException(status_code=400, detail="Missing url or videoId parameter")
+
+    try:
+        cmd = [
+            "yt-dlp",
+            "-j",
+            "-f", "bestaudio/best",
+            "--no-playlist",
+            target
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if proc.returncode != 0:
+            raise HTTPException(status_code=502, detail=f"Stream extraction error: {proc.stderr[:200]}")
+
+        data = json.loads(proc.stdout)
+        stream_url = data.get("url")
+        if not stream_url:
+            raise HTTPException(status_code=404, detail="No direct audio stream URL extracted")
+
+        return {
+            "streamUrl": stream_url,
+            "title": data.get("title", ""),
+            "artist": data.get("uploader", "") or data.get("channel", ""),
+            "duration": int(data.get("duration") or 210),
+            "coverUrl": data.get("thumbnail") or (f"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg" if videoId else "")
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Stream resolution timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/download")
 def download_track(req: DownloadRequest):
-    q = req.query.strip()
-    if not q:
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    q = (req.query or "").strip()
+    direct_link = (req.exact_url or "").strip()
+    if not q and not direct_link:
+        raise HTTPException(status_code=400, detail="Query or exact_url cannot be empty")
 
-    pref_fmt = req.preferred_format.lower()
-    res = checkpoint4_pipeline.process_song(
-        input_query=q,
-        selection_index=req.selection_index,
-        base_dir=DEFAULT_VAULT_DIR,
-        override_album=req.override_album,
-        preferred_format=pref_fmt
-    )
+    effective_query = direct_link if (direct_link and (direct_link.startswith("http") or "youtu" in direct_link)) else q
 
-    if res.get("status") == "success":
-        final_path = res.get("file_path") or res.get("final_file_path")
-        p = Path(final_path) if final_path else None
-        
-        # Read synced lyrics if generated
-        lrc_text = ""
-        if p:
-            lrc_file = p.with_suffix(".lrc")
-            if lrc_file.exists():
+    try:
+        pref_fmt = req.preferred_format.lower()
+        res = checkpoint4_pipeline.process_song(
+            input_query=effective_query,
+            selection_index=req.selection_index,
+            base_dir=DEFAULT_VAULT_DIR,
+            override_album=req.override_album,
+            preferred_format=pref_fmt,
+            exact_url=direct_link or None,
+            exact_title=req.exact_title,
+            exact_artist=req.exact_artist
+        )
+
+        if res.get("status") == "success":
+            final_path = res.get("file_path") or res.get("final_file_path")
+            p = Path(final_path) if final_path else None
+            
+            # On Android/Termux, register the new file with MediaStore so players see it immediately
+            if p and shutil.which("termux-media-scan"):
                 try:
-                    lrc_text = lrc_file.read_text(encoding="utf-8")
+                    subprocess.Popen(["termux-media-scan", str(p)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 except Exception:
                     pass
 
-        return {
-            "status": "success",
-            "artist": res.get("artist"),
-            "track": res.get("track"),
-            "album": res.get("album"),
-            "year": res.get("year"),
-            "file_path": str(p) if p else "",
-            "file_size_mb": res.get("file_size_mb", 0.0),
-            "duration": res.get("duration", 0.0),
-            "source_used": res.get("source_used", "engine"),
-            "audio_url": f"/api/audio/file?path={final_path}" if final_path else "",
-            "cover_url": f"/api/audio/cover?path={final_path}" if final_path else "",
-            "lrc_content": lrc_text,
-            "has_lrc": bool(lrc_text),
-            "has_cover": True
-        }
-    else:
+            # Read synced lyrics if generated
+            lrc_text = ""
+            if p:
+                lrc_file = p.with_suffix(".lrc")
+                if lrc_file.exists():
+                    try:
+                        lrc_text = lrc_file.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
+
+            return {
+                "status": "success",
+                "artist": res.get("artist"),
+                "track": res.get("track"),
+                "album": res.get("album"),
+                "year": res.get("year"),
+                "file_path": str(p) if p else "",
+                "file_size_mb": res.get("file_size_mb", 0.0),
+                "duration": res.get("duration", 0.0),
+                "source_used": res.get("source_used", "engine"),
+                "audio_url": f"/api/audio/file?path={final_path}" if final_path else "",
+                "cover_url": f"/api/audio/cover?path={final_path}" if final_path else "",
+                "lrc_content": lrc_text,
+                "has_lrc": bool(lrc_text),
+                "has_cover": True
+            }
+        else:
+            return {
+                "status": "failed",
+                "reason": res.get("reason", "Download failed"),
+                "input": q
+            }
+    except Exception as e:
         return {
             "status": "failed",
-            "reason": res.get("reason", "Download failed"),
+            "reason": str(e),
             "input": q
+        }
+
+@app.post("/api/titanium/verify")
+def titanium_verify(req: TitaniumVerifyRequest):
+    """Pre-verify ground-truth audio candidates with Gemini and TV/Music catalog."""
+    q = req.query.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    try:
+        import titanium_verifier
+        is_cartoon = titanium_verifier.is_cartoon_or_tv(q)
+        target_type = "Cartoon / TV Broadcast Theme" if is_cartoon else "Commercial Music Single"
+        language = "Hindi / English" if is_cartoon else "English"
+        candidates = titanium_verifier.search_youtube_candidates(q, max_results=6, is_cartoon=is_cartoon)
+        best_id, conf, reason = titanium_verifier.gemini_verify_candidates(
+            target_name=q,
+            target_type=target_type,
+            language=language,
+            candidates=candidates
+        )
+        return {
+            "query": q,
+            "is_cartoon": is_cartoon,
+            "target_type": target_type,
+            "candidates_found": len(candidates),
+            "best_youtube_id": best_id,
+            "confidence": conf,
+            "verified": conf >= 80.0 and bool(best_id),
+            "reason": reason
+        }
+    except Exception as e:
+        return {
+            "query": q,
+            "is_cartoon": False,
+            "target_type": "Unknown",
+            "candidates_found": 0,
+            "best_youtube_id": None,
+            "confidence": 0.0,
+            "verified": False,
+            "reason": f"Verification error: {str(e)}"
         }
 
 @app.get("/api/audio/file")
 def get_audio_file(path: str = Query(...)):
-    p = Path(path)
-    if not p.exists() or not p.is_file():
-        raise HTTPException(status_code=404, detail=f"Audio file not found: {path}")
+    try:
+        p = Path(path).resolve()
+        if not p.exists() or not p.is_file():
+            raise HTTPException(status_code=404, detail=f"Audio file not found: {path}")
 
-    ext = p.suffix.lower()
-    media_type = "audio/flac" if ext == ".flac" else ("audio/mpeg" if ext == ".mp3" else "application/octet-stream")
-    return FileResponse(
-        path=p,
-        media_type=media_type,
-        filename=p.name,
-        headers={
-            "Accept-Ranges": "bytes",
-            "Content-Disposition": f'attachment; filename="{p.name}"'
-        }
-    )
+        # Ensure requested path is an audio file
+        ext = p.suffix.lower()
+        if ext not in (".flac", ".mp3", ".opus", ".m4a", ".wav", ".ogg", ".aac"):
+            raise HTTPException(status_code=403, detail="Access denied: file is not an audio format")
+
+        if ext == ".flac":
+            media_type = "audio/flac"
+        elif ext == ".mp3":
+            media_type = "audio/mpeg"
+        elif ext == ".opus":
+            media_type = "audio/ogg; codecs=opus"
+        elif ext == ".m4a":
+            media_type = "audio/mp4"
+        elif ext == ".wav":
+            media_type = "audio/wav"
+        else:
+            media_type = "application/octet-stream"
+        return FileResponse(
+            path=p,
+            media_type=media_type,
+            filename=p.name,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": f'attachment; filename="{p.name}"'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/audio/cover")
 def get_audio_cover(path: str = Query(...)):
-    p = Path(path)
-    if p.is_file():
-        cover_path = p.parent / "cover.jpg"
-    else:
-        cover_path = p / "cover.jpg"
-    
-    if cover_path.exists():
-        return FileResponse(path=cover_path, media_type="image/jpeg")
-    raise HTTPException(status_code=404, detail="Cover not found")
+    try:
+        p = Path(path).resolve()
+        cover_path = None
+        if p.is_file():
+            cp = p.parent / "cover.jpg"
+            if cp.exists() and cp.is_file():
+                cover_path = cp
+            else:
+                try:
+                    covers = [p.parent / x for x in os.listdir(p.parent) if x.lower().endswith((".jpg", ".png", ".jpeg", ".webp"))]
+                    if covers:
+                        cover_path = covers[0]
+                except Exception:
+                    pass
+        elif p.is_dir():
+            cp = p / "cover.jpg"
+            if cp.exists() and cp.is_file():
+                cover_path = cp
+        
+        if cover_path and cover_path.exists() and cover_path.is_file():
+            return FileResponse(path=cover_path, media_type="image/jpeg")
+
+        # Extract embedded artwork from audio file (Opus/FLAC/MP3)
+        if p.is_file() and p.suffix.lower() in (".opus", ".flac", ".mp3", ".m4a", ".ogg", ".wav"):
+            cache_dir = Path.home() / ".cache" / "sherofetch" / "covers"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            path_hash = hashlib.md5(str(p).encode("utf-8")).hexdigest()
+            cached_cover = cache_dir / f"{path_hash}.jpg"
+            if cached_cover.exists() and cached_cover.stat().st_size > 500:
+                return FileResponse(path=cached_cover, media_type="image/jpeg")
+            
+            cmd = ["ffmpeg", "-y", "-i", str(p), "-an", "-vcodec", "copy", "-f", "image2", str(cached_cover)]
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+            if res.returncode == 0 and cached_cover.exists() and cached_cover.stat().st_size > 500:
+                return FileResponse(path=cached_cover, media_type="image/jpeg")
+
+        raise HTTPException(status_code=404, detail="Cover not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/library")
 def get_library():
@@ -309,6 +459,72 @@ def get_library():
         except Exception:
             pass
     return {"library": [], "vault_dir": str(DEFAULT_VAULT_DIR)}
+
+@app.get("/api/vault/tracks")
+def get_vault_tracks(request: Request):
+    origin = str(request.base_url).rstrip("/")
+    base = Path(DEFAULT_VAULT_DIR)
+    if not base.exists():
+        return {"tracks": [], "count": 0}
+    
+    tracks = []
+    for root, _, files in os.walk(base):
+        for f in files:
+            if f.lower().endswith((".opus", ".flac", ".mp3", ".m4a", ".wav")):
+                path = Path(root) / f
+                base_name = path.stem
+                lrc_file = path.with_suffix(".lrc")
+                
+                parts = base_name.split(" - ", 1)
+                artist = parts[0].strip() if len(parts) > 1 else "Unknown Artist"
+                title = parts[1].strip() if len(parts) > 1 else base_name
+                try:
+                    rel_dir = path.parent.relative_to(base)
+                    dir_parts = rel_dir.parts
+                    genre = dir_parts[0] if len(dir_parts) > 0 else "Various"
+                    album = dir_parts[-1] if len(dir_parts) > 1 else "Single"
+                except Exception:
+                    genre = "Various"
+                    album = "Single"
+
+                tracks.append({
+                    "title": title,
+                    "artist": artist,
+                    "album": album,
+                    "genre": genre,
+                    "path": str(path),
+                    "filename": f,
+                    "has_lrc": lrc_file.exists(),
+                    "audio_url": f"{origin}/api/audio/file?path={urllib.parse.quote(str(path))}",
+                    "cover_url": f"{origin}/api/audio/cover?path={urllib.parse.quote(str(path))}",
+                    "format": path.suffix[1:].upper(),
+                    "size_mb": round(path.stat().st_size / (1024 * 1024), 2)
+                })
+    return {"tracks": tracks, "count": len(tracks)}
+
+@app.get("/api/vault/lyrics")
+def get_vault_lyrics(path: str = Query(...)):
+    p = Path(path)
+    lrc_file = p.with_suffix(".lrc")
+    if lrc_file.exists() and lrc_file.is_file():
+        try:
+            return {"lrc": lrc_file.read_text(encoding="utf-8", errors="ignore")}
+        except Exception as e:
+            return {"lrc": "", "error": str(e)}
+    return {"lrc": ""}
+
+@app.post("/api/vault/open-folder")
+def open_vault_folder():
+    base = Path(DEFAULT_VAULT_DIR)
+    base.mkdir(parents=True, exist_ok=True)
+    try:
+        opener = shutil.which("xdg-open") or shutil.which("termux-open")
+        if not opener:
+            return {"success": False, "path": str(base), "error": "No folder opener available"}
+        subprocess.Popen([opener, str(base)])
+        return {"success": True, "path": str(base)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.get("/apk")
 @app.get("/SheroFetch-debug.apk")
@@ -331,6 +547,15 @@ def download_page():
         return FileResponse(path=html_file, media_type="text/html")
     return {"message": "Visit /apk to download the latest SheroFetch Android APK."}
 
-if __name__ == "__main__":
+def main():
+    import argparse
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5050)
+    ap = argparse.ArgumentParser(description="SheroFetch backend API server")
+    ap.add_argument("--host", default=os.environ.get("SHEROFETCH_HOST", "127.0.0.1"))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("SHEROFETCH_PORT", "5050")))
+    a = ap.parse_args()
+    uvicorn.run(app, host=a.host, port=a.port)
+
+
+if __name__ == "__main__":
+    main()

@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Optional, Union, Tuple, List, Dict, Any
 
-DEFAULT_BASE_DIR = Path.home() / "Music" / "MusicDownloader"
+DEFAULT_BASE_DIR = Path(os.environ["SHEROFETCH_MUSIC_DIR"]).expanduser() if os.environ.get("SHEROFETCH_MUSIC_DIR") else Path.home() / "Music" / "MusicDownloader"
 if os.name == "nt":
     _appdata = os.environ.get("APPDATA")
     DEFAULT_CONFIG_DIR = (Path(_appdata) if _appdata else Path.home() / "AppData" / "Roaming") / "music_downloader"
@@ -146,54 +146,73 @@ def verify_path_guard(
 def update_library_index(entry: Dict[str, Any], index_file: Optional[Path] = None) -> List[Dict[str, Any]]:
     """
     Appends or updates a track entry in the persistent index.json.
+    Thread-safe and process-safe with an inter-process file lock.
     Deduplicates entries by track file_path or id.
     """
     target_index = index_file if index_file else DEFAULT_INDEX_FILE
     target_index.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = target_index.with_suffix(".lock")
 
-    items = []
-    if target_index.exists():
-        try:
-            with open(target_index, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    items = json.loads(content)
-                    if not isinstance(items, list):
-                        items = []
-        except Exception:
-            items = []
+    lock_fd = None
+    try:
+        import fcntl
+        lock_fd = open(lock_file, "w")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    except Exception:
+        lock_fd = None
 
-    # Deduplicate existing entry matching file_path, id, or same folder+(artist,track)
-    entry_id = entry.get("id") or entry.get("mbid")
-    entry_path = entry.get("file_path")
-    entry_folder = entry.get("folder_path")
-    entry_artist = (entry.get("artist") or "").lower()
-    entry_track = (entry.get("track") or "").lower()
+    try:
+        items = []
+        if target_index.exists():
+            try:
+                with open(target_index, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        items = json.loads(content)
+                        if not isinstance(items, list):
+                            items = []
+            except Exception:
+                items = []
 
-    filtered_items = []
-    for it in items:
-        p = it.get("file_path")
-        if p and not Path(p).exists():
-            continue
-        if entry_folder and it.get("folder_path") == entry_folder:
-            if (it.get("artist") or "").lower() == entry_artist and (it.get("track") or "").lower() == entry_track:
+        # Deduplicate existing entry matching file_path, id, or same folder+(artist,track)
+        entry_id = entry.get("id") or entry.get("mbid")
+        entry_path = entry.get("file_path")
+        entry_folder = entry.get("folder_path")
+        entry_artist = (entry.get("artist") or "").lower()
+        entry_track = (entry.get("track") or "").lower()
+
+        filtered_items = []
+        for it in items:
+            p = it.get("file_path")
+            if p and not Path(p).exists():
                 continue
-        if entry_id and (it.get("id") == entry_id or it.get("mbid") == entry_id):
-            continue
-        if entry_path and it.get("file_path") == entry_path:
-            continue
-        filtered_items.append(it)
+            if entry_folder and it.get("folder_path") == entry_folder:
+                if (it.get("artist") or "").lower() == entry_artist and (it.get("track") or "").lower() == entry_track:
+                    continue
+            if entry_id and (it.get("id") == entry_id or it.get("mbid") == entry_id):
+                continue
+            if entry_path and it.get("file_path") == entry_path:
+                continue
+            filtered_items.append(it)
 
-    items = filtered_items
-    items.insert(0, entry)
+        items = filtered_items
+        items.insert(0, entry)
 
-    # Atomic write to avoid corruption
-    tmp_file = target_index.with_suffix(".json.tmp")
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(items, f, indent=2, ensure_ascii=False)
-    tmp_file.replace(target_index)
+        # Atomic write to avoid corruption
+        tmp_file = target_index.with_suffix(".json.tmp")
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(items, f, indent=2, ensure_ascii=False)
+        tmp_file.replace(target_index)
 
-    return items
+        return items
+    finally:
+        if lock_fd:
+            try:
+                import fcntl
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+            except Exception:
+                pass
 
 
 def read_library_index(index_file: Optional[Path] = None) -> List[Dict[str, Any]]:

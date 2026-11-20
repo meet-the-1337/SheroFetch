@@ -7,6 +7,7 @@ Combines real-world streaming & scrobble popularity (Last.fm Scrobble Index + iT
 with canonical MusicBrainz metadata, fuzzy sequence matching, and karaoke/tribute filtering.
 """
 
+import os
 import re
 import json
 import urllib.request
@@ -15,7 +16,7 @@ import unicodedata
 import math
 from difflib import SequenceMatcher
 
-LASTFM_API_KEY = "b25b959554ed76058ac220b7b2e0a026"
+LASTFM_API_KEY = os.environ.get("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
 
 DERIVATIVE_PATTERNS = [
     r'\bremix\b', r'\blive\b', r'ライブ', r'\bpiano\b', r'\bcover\b', 
@@ -95,7 +96,8 @@ def is_karaoke_or_tribute(title: str, artist: str) -> bool:
     patterns = [
         r'\bkaraoke\b', r'\btribute\b', r'\bcover\b', r'\bbacking track\b',
         r'\bsound-alike\b', r'\bringtone\b', r'\bpiano\b', r'\blullaby\b',
-        r'\blo-?fi\b', r'\binstrumentals?\b', r'\bunplugged\b', r'\bacoustic\b'
+        r'\blo-?fi\b', r'\binstrumentals?\b', r'\bunplugged\b', r'\bacoustic\b',
+        r'\bkidz bop\b', r'\bnightcore\b', r'\bsped up\b', r'\bslowed\b', r'\b8d audio\b'
     ]
     return any(re.search(p, combined) for p in patterns)
 
@@ -209,8 +211,18 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
     candidates = []
     seen_keys = set()
 
+
+    # Explicit "Artist - Title" (or "Title - Artist") split of the user's query
+    raw_split = [x.strip() for x in re.split(r'\s+[-\u2013\u2014]\s+', clean_q, maxsplit=1)]
+    q_split = [normalize_text(x).lower() for x in raw_split]
+    q_left, q_right = (q_split[0], q_split[1]) if len(q_split) == 2 and all(q_split) else (None, None)
+
     # 2. Gather candidates from Last.fm (Tracks & Albums)
     tracks = query_lastfm(clean_q, "track.search", limit=12)
+    if q_left and q_right:
+        # Structured lookups in both orientations beat free-text search on "A - B"
+        tracks.extend(query_lastfm(raw_split[1], "track.search", limit=5, artist=raw_split[0]))
+        tracks.extend(query_lastfm(raw_split[0], "track.search", limit=5, artist=raw_split[1]))
     max_listeners = max([int(t.get("listeners") or 0) for t in tracks], default=0)
 
     # If no dominant track hit (> 200k), try smart compound (title, artist) partition
@@ -249,6 +261,12 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
             "listeners": 25000
         })
 
+    # Real Last.fm listener counts, used to rank iTunes catalog hits by actual popularity
+    lastfm_listeners = {}
+    for t in tracks:
+        k = (normalize_text(t.get("artist") or "").lower(), normalize_text(t.get("name") or "").lower())
+        lastfm_listeners[k] = max(lastfm_listeners.get(k, 0), int(t.get("listeners") or 0))
+
     # Optional iTunes catalog (Official studio catalog with accurate durations and 1000x1000 artwork)
     itunes_items = query_itunes_catalog(clean_q, entity="song", limit=8)
     for it in itunes_items:
@@ -264,7 +282,12 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
             "mbid": str(it.get("trackId") or ""),
             "cover": cover_url,
             "duration": dur_sec,
-            "listeners": 1500000
+            # Unknown to Last.fm => treat as niche rather than as a 1.5M-listener hit
+            "listeners": lastfm_listeners.get(
+                (normalize_text(it.get("artistName") or "").lower(), normalize_text(it.get("trackName") or "").lower()),
+                20000,
+            ),
+            "itunes": True,
         })
 
     for idx, item in enumerate(raw_items):
@@ -336,10 +359,29 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
         elif art_in_q:
             score -= 0.30
 
+        # Query order matches candidate (artist, title) in either orientation the user typed
+        if q_left and q_right:
+            fwd = min(calculate_similarity(clean_a, q_left), calculate_similarity(clean_t, q_right))
+            rev = min(calculate_similarity(clean_a, q_right), calculate_similarity(clean_t, q_left))
+            if fwd >= 0.85:
+                score += 0.15          # conventional "Artist - Title"
+            elif rev >= 0.85:
+                score += 0.05          # "Title - Artist" also accepted, weaker
+
+        # Junk uploads whose title repeats the artist ("Kendrick Lamar - HUMBLE.")
+        if re.search(r'\s[-\u2013\u2014]\s', t_name):
+            t_left = normalize_text(re.split(r'\s[-\u2013\u2014]\s', t_name, maxsplit=1)[0]).lower()
+            if calculate_similarity(t_left, clean_a) > 0.8 or (q_left and calculate_similarity(t_left, q_left) > 0.8):
+                score -= 0.50
+
+        # Confirmed popular by real Last.fm scrobble counts (placeholders are < 100k)
+        if listeners >= 300000 and not (item.get("itunes") and listeners == 20000):
+            score += 0.20
+
         # Strict Canonical Original Studio Check:
         # Detect if candidate is live, remix, acoustic, karaoke, session, demo, or tribute
         combined_text = f"{t_name} {item.get('album', '')}".lower()
-        is_derivative = bool(re.search(r'\b(live|remix|acoustic|karaoke|tribute|cover|instrumental|demo|session|rehearsal|deluxe edition bonus|bbc session|club mix)\b', combined_text))
+        is_derivative = bool(re.search(r'\b(live|remix|acoustic|karaoke|tribute|cover|instrumental|demo|session|rehearsal|deluxe edition bonus|bbc session|club mix|mixed|dj mix|extended set|extended mix|megamix|medley)\b', combined_text))
         query_wants_derivative = bool(re.search(r'\b(live|remix|acoustic|karaoke|tribute|cover|instrumental|demo|session|rehearsal|club mix)\b', raw_q.lower()))
 
         if is_derivative and not query_wants_derivative:
@@ -384,6 +426,27 @@ def match_song(query: str, query_type: str = "ambiguous", preferred_format: str 
             "cover_url": None,
             "language": "en"
         }
+
+    # Fill real album / duration / artwork for Last.fm hits from the matching iTunes catalog entry
+    def _mk(a, t):
+        return tuple(re.sub(r'[^a-z0-9 ]', '', normalize_text(x or "").lower()).strip() for x in (a, t))
+
+    itunes_meta = {}
+    for it in itunes_items:
+        k = _mk(it.get("artistName"), it.get("trackName"))
+        if k not in itunes_meta and it.get("trackTimeMillis"):
+            itunes_meta[k] = it
+    for c in candidates:
+        it = itunes_meta.get(_mk(c["artist"], c["track"]))
+        if not it:
+            continue
+        if c["album"] in ("Single / Official Release", c["track"]) and it.get("collectionName"):
+            c["album"] = c["release_type"] = it["collectionName"]
+        if c["duration"] == 220.0:
+            c["duration"] = round(it["trackTimeMillis"] / 1000.0, 1)
+        art = it.get("artworkUrl100") or ""
+        if art and (not c.get("cover_url") or "lastfm" in (c.get("cover_url") or "")):
+            c["cover_url"] = art.replace("100x100bb", "1000x1000bb")
 
     candidates.sort(key=lambda x: x["raw_score"], reverse=True)
     best = candidates[0]

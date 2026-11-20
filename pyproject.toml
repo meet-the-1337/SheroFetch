@@ -3,21 +3,22 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "universal-music-installer"
-version = "1.0.0"
-description = "Deterministic sequential music library builder with 10-checkpoint validation engine."
+name = "sherofetch"
+version = "1.0.2"
+description = "Deterministic 4-tier lossless music acquisition & 5-gate verification engine."
 readme = "README.md"
-license = {text = "MIT"}
-requires-python = ">=3.11"
+license = {text = "AGPL-3.0"}
+requires-python = ">=3.10"
 authors = [
     {name = "meet-the-1337"},
 ]
-keywords = ["music", "library", "downloader", "musicbrainz", "metadata", "lyrics"]
+keywords = ["music", "downloader", "audiophile", "flac", "opus", "lyrics", "soulseek", "youtube"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio",
@@ -27,25 +28,28 @@ dependencies = [
     "requests>=2.31",
     "mutagen>=1.47",
     "Pillow>=10.0",
-    "flet>=0.25",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-cov>=5.0",
-    "ruff>=0.5",
+    "yt-dlp>=2024.0.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.0",
 ]
 
 [project.scripts]
-umi = "umi.__main__:main"
+sherofetch = "cli:main"
+sherofetch-server = "backend_server:main"
+
+[tool.setuptools]
+py-modules = [
+    "cli", "config_manager", "universal_resolver", "five_gate_verifier",
+    "backend_server", "checkpoint4_pipeline", "match_song", "playlist_resolver",
+    "path_manager", "download_cli", "search_cli", "spotify_sync_engine",
+    "batch_mp3_exporter", "sync_to_spotify_mp3",
+]
 
 [project.urls]
-Homepage = "https://github.com/meet-the-1337/universal-music-installer"
-Issues = "https://github.com/meet-the-1337/universal-music-installer/issues"
+Homepage = "https://github.com/meet-the-1337/sherofetch"
+Issues = "https://github.com/meet-the-1337/sherofetch/issues"
 
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
