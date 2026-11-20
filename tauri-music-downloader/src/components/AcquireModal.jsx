@@ -256,7 +256,8 @@ export function AcquireModal({ isOpen = true, onClose, onTrackInstalled, invokeF
       }
     } catch (err) {
       console.error('Search error:', err)
-      setStatusMsg({ type: 'error', text: err.message || 'Search failed.' })
+      const msg = typeof err === 'string' ? err : err?.message || 'Search failed.'
+      setStatusMsg({ type: 'error', text: msg })
     } finally {
       setIsSearching(false)
     }
@@ -304,7 +305,8 @@ export function AcquireModal({ isOpen = true, onClose, onTrackInstalled, invokeF
       if (onTrackInstalled) onTrackInstalled(installed)
     } catch (err) {
       console.error('Download error:', err)
-      setStatusMsg({ type: 'error', text: err.message || 'Acquisition failed.' })
+      const msg = typeof err === 'string' ? err : err?.message || 'Acquisition failed.'
+      setStatusMsg({ type: 'error', text: msg })
     } finally {
       setDownloadingMbid(null)
     }
@@ -342,7 +344,8 @@ export function AcquireModal({ isOpen = true, onClose, onTrackInstalled, invokeF
       }
     } catch (err) {
       console.error('Link error:', err)
-      setStatusMsg({ type: 'error', text: err.message || 'Link resolution failed.' })
+      const msg = typeof err === 'string' ? err : err?.message || 'Link resolution failed.'
+      setStatusMsg({ type: 'error', text: msg })
     } finally {
       setIsResolvingLink(false)
     }
@@ -427,7 +430,7 @@ export function AcquireModal({ isOpen = true, onClose, onTrackInstalled, invokeF
           artist: songArtist,
           tier: 'failed',
           tier_label: 'Failed',
-          how: e?.message || 'Download error',
+          how: typeof e === 'string' ? e : e?.message || 'Download error',
           file_path: '',
           folder_path: '',
           size_mb: 0,

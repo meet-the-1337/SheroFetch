@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { getServerUrl, setServerUrl, getServerToken, setServerToken } from '../apiBridge'
 import {
   X,
   User,
@@ -27,6 +28,16 @@ export function ProfileModal({
   invokeFn
 }) {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [serverUrl, setServerUrlInput] = useState(() => getServerUrl())
+  const [serverToken, setServerTokenInput] = useState(() => getServerToken())
+  const [serverSaved, setServerSaved] = useState(false)
+
+  const saveServer = () => {
+    setServerUrl(serverUrl.trim().replace(/\/+$/, ''))
+    setServerToken(serverToken)
+    setServerSaved(true)
+    setTimeout(() => setServerSaved(false), 1800)
+  }
 
   if (!isOpen) return null
 
@@ -195,6 +206,45 @@ export function ProfileModal({
           </div>
 
           {/* 2. Open Source Ecosystem Showcase */}
+          {/* Backend server (optional: a SheroFetch server on another device) */}
+          <div className="p-4 rounded-2xl bg-zinc-900/80 border border-white/10 flex flex-col gap-2.5">
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+              Backend Server
+            </h4>
+            <p className="text-[11px] text-zinc-500 leading-snug">
+              Leave empty to use this device (Termux or desktop backend on port 5050). For another device, enter its
+              address and the token from <span className="font-mono text-zinc-400">sherofetch-server token</span>.
+            </p>
+            <input
+              type="url"
+              inputMode="url"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={serverUrl}
+              onChange={(e) => setServerUrlInput(e.target.value)}
+              placeholder="http://192.168.1.20:5050"
+              aria-label="Backend server address"
+              className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500/60"
+            />
+            <input
+              type="password"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={serverToken}
+              onChange={(e) => setServerTokenInput(e.target.value)}
+              placeholder="Access token (only for another device)"
+              aria-label="Backend server access token"
+              className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500/60"
+            />
+            <button
+              onClick={saveServer}
+              className="w-full py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/10 text-xs font-bold transition"
+            >
+              {serverSaved ? 'Saved' : 'Save server settings'}
+            </button>
+          </div>
+
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">

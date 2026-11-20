@@ -57,6 +57,31 @@ export function getServerUrl() {
   return ''
 }
 
+// LAN access token for a SheroFetch server on another device (`sherofetch-server token` in Termux).
+// Not needed for a server on the same device (loopback is always trusted).
+export function getServerToken() {
+  try {
+    return (localStorage.getItem('sherofetch_server_token') || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+export function setServerToken(token) {
+  try {
+    if (token && token.trim()) localStorage.setItem('sherofetch_server_token', token.trim())
+    else localStorage.removeItem('sherofetch_server_token')
+  } catch {}
+}
+
+// Attach the token only to requests aimed at a SheroFetch server, never to third-party APIs
+function serverAuthHeaders(url) {
+  const token = getServerToken()
+  if (!token || typeof url !== 'string') return {}
+  const servers = [getServerUrl(), localStorage.getItem('sherofetch_remote_gateway') || ''].filter(Boolean)
+  return servers.some((h) => url.startsWith(h)) ? { 'X-SheroFetch-Token': token } : {}
+}
+
 export function setServerUrl(url) {
   try {
     if (url) localStorage.setItem('sherofetch_server_url', url.trim())
@@ -80,7 +105,6 @@ export function setAcquisitionMode(mode) {
 // Dynamically fetches the current 24/7 Cloud P2P Gateway URL from GitHub
 // Allows instant global URL updates for all mobile users with zero APK re-installs
 export async function getActiveCloudGateway() {
-  const DEFAULT_GATEWAY = 'https://proceed-derived-incorporated-examines.trycloudflare.com'
   try {
     const rawUrl = 'https://raw.githubusercontent.com/meet-the-1337/SheroFetch/main/gateway_url.txt'
     if (Capacitor.isNativePlatform() && typeof CapacitorHttp !== 'undefined') {
@@ -107,23 +131,20 @@ export async function getActiveCloudGateway() {
       }
     }
   } catch {}
-  return localStorage.getItem('sherofetch_remote_gateway') || DEFAULT_GATEWAY
+  return localStorage.getItem('sherofetch_remote_gateway') || ''
 }
 
 // Auto-discovers any reachable Soulseek / FLAC backend server globally or on LAN
 export async function findReachableLosslessServer() {
   const custom = getServerUrl()
   const dynamicGateway = await getActiveCloudGateway()
-  const candidates = [
-    custom,
-    dynamicGateway,
-    'https://proceed-derived-incorporated-examines.trycloudflare.com',
-    'http://127.0.0.1:5050',
-    'http://localhost:5050',
-    'http://172.16.213.166:5050',
-    'http://172.16.79.114:5050',
-    'http://10.0.2.2:5050'
-  ].filter(Boolean)
+  
+  // On mobile, do NOT ping local desktop loopbacks (zero network bridge dependency).
+  // Run autonomous on-device directly unless a custom server or cloud gateway is configured.
+  const candidates = [custom, dynamicGateway].filter(Boolean)
+  // Same-device server: the desktop backend, or the Termux backend on the phone itself
+  candidates.push('http://127.0.0.1:5050')
+  if (!Capacitor.isNativePlatform()) candidates.push('http://localhost:5050')
 
   for (const host of candidates) {
     try {
@@ -131,15 +152,19 @@ export async function findReachableLosslessServer() {
       if (Capacitor.isNativePlatform() && typeof CapacitorHttp !== 'undefined') {
         const res = await CapacitorHttp.get({
           url: pingUrl,
-          connectTimeout: 2000,
-          readTimeout: 2000
+          headers: host === custom ? serverAuthHeaders(custom + '/') : {},
+          connectTimeout: 1200,
+          readTimeout: 1200
         })
         if (res && (res.status === 200 || res.data?.status)) {
           setServerUrl(host)
           return host
         }
       } else {
-        const r = await fetch(pingUrl, { signal: AbortSignal.timeout(1500) })
+        const r = await fetch(pingUrl, {
+          headers: host === custom ? serverAuthHeaders(custom + '/') : {},
+          signal: AbortSignal.timeout(1200)
+        })
         if (r.ok) {
           setServerUrl(host)
           return host
@@ -151,7 +176,7 @@ export async function findReachableLosslessServer() {
 }
 
 // Universal native HTTP GET: Uses CapacitorHttp on mobile to bypass CORS completely
-async function nativeGet(url, headers = {}) {
+async function nativeGet(url, headers = {}, timeoutMs = 8000) {
   const defaultHeaders = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile; SheroFetch/1.0.3)',
     'Accept': 'application/json, text/plain, */*'
@@ -161,7 +186,9 @@ async function nativeGet(url, headers = {}) {
     try {
       const res = await CapacitorHttp.get({
         url,
-        headers: { ...defaultHeaders, ...headers }
+        headers: { ...defaultHeaders, ...serverAuthHeaders(url), ...headers },
+        connectTimeout: timeoutMs,
+        readTimeout: timeoutMs
       })
       if (res && res.data !== undefined) {
         if (typeof res.data === 'string') {
@@ -178,8 +205,11 @@ async function nativeGet(url, headers = {}) {
     }
   }
 
-  // Standard fetch fallback
-  const res = await fetch(url, { headers: { ...defaultHeaders, ...headers } })
+  // Standard fetch fallback with timeout
+  const res = await fetch(url, {
+    headers: { ...defaultHeaders, ...serverAuthHeaders(url), ...headers },
+    signal: AbortSignal.timeout(timeoutMs)
+  })
   if (!res.ok) throw new Error(`HTTP error ${res.status}`)
   const text = await res.text()
   try {
@@ -190,7 +220,7 @@ async function nativeGet(url, headers = {}) {
 }
 
 // Universal native HTTP POST: Uses CapacitorHttp on mobile
-async function nativePost(url, body = {}) {
+async function nativePost(url, body = {}, timeoutMs = 8000) {
   const defaultHeaders = {
     'Content-Type': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile; SheroFetch/1.0.3)',
@@ -201,8 +231,10 @@ async function nativePost(url, body = {}) {
     try {
       const res = await CapacitorHttp.post({
         url,
-        headers: defaultHeaders,
-        data: body
+        headers: { ...defaultHeaders, ...serverAuthHeaders(url) },
+        data: body,
+        connectTimeout: timeoutMs,
+        readTimeout: timeoutMs
       })
       if (res && res.data !== undefined) {
         if (typeof res.data === 'string') {
@@ -221,8 +253,9 @@ async function nativePost(url, body = {}) {
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: defaultHeaders,
-    body: JSON.stringify(body)
+    headers: { ...defaultHeaders, ...serverAuthHeaders(url) },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs)
   })
   if (!res.ok) throw new Error(`HTTP error ${res.status}`)
   return await res.json()
@@ -255,89 +288,336 @@ function decryptJioSaavnMediaUrl(encUrl) {
   }
 }
 
-// Standalone on-device track resolver (No PC or external backend server needed)
-async function resolveOnDeviceTrack(query) {
-  const cleanQ = query.trim()
-  console.log(`[SheroFetch On-Device] Searching catalog for: "${cleanQ}"`)
-
-  // 1. Search JioSaavn API via native HTTP
-  let results = []
+// Resilient public Invidious instance rotation with user-override support
+export function getInvidiousInstances() {
   try {
-    const sUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=15&q=${encodeURIComponent(cleanQ)}`
-    const sData = await nativeGet(sUrl)
-    if (sData && sData.results) {
-      results = sData.results
+    const saved = localStorage.getItem('sherofetch_invidious_instances')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
     }
-  } catch (e) {
-    console.warn('[SheroFetch On-Device] Full search error:', e)
+  } catch {}
+  return [
+    'https://invidious.f5.si',
+    'https://inv.nadeko.net',
+    'https://invidious.flokinet.to',
+    'https://yt.artemislena.eu',
+    'https://invidious.private.coffee',
+    'https://iv.ggtyler.dev',
+    'https://yewtu.be'
+  ]
+}
+
+export function setInvidiousInstances(instances) {
+  try {
+    if (Array.isArray(instances)) {
+      localStorage.setItem('sherofetch_invidious_instances', JSON.stringify(instances))
+    }
+  } catch {}
+}
+
+async function resolveYouTubeAudioStream(videoId) {
+  if (!videoId) return null
+
+  // 1. Try PC node if online (100% reliable via yt-dlp)
+  try {
+    const reachableHost = await findReachableLosslessServer()
+    if (reachableHost) {
+      console.log(`[SheroFetch Stream] Requesting PC node yt-dlp extraction for video: ${videoId}...`)
+      const pcRes = await nativeGet(`${reachableHost}/api/stream/resolve?videoId=${videoId}`, {}, 10000)
+      if (pcRes && pcRes.streamUrl) {
+        return {
+          streamUrl: pcRes.streamUrl,
+          title: pcRes.title || '',
+          artist: pcRes.artist || '',
+          duration: pcRes.duration || 210,
+          coverUrl: pcRes.coverUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+        }
+      }
+    }
+  } catch (pcErr) {
+    console.warn('[SheroFetch Stream] PC node stream resolve notice:', pcErr)
   }
 
-  // 2. Fallback to Autocomplete if needed
-  if (results.length === 0) {
+  // 2. Try Invidious instances
+  const instances = getInvidiousInstances()
+  for (const inst of instances) {
     try {
-      const aUrl = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${encodeURIComponent(cleanQ)}`
-      const aData = await nativeGet(aUrl)
-      if (aData && aData.songs?.data) {
-        results = aData.songs.data
+      const res = await nativeGet(`${inst}/api/v1/videos/${videoId}`, {}, 5000)
+      const data = typeof res === 'object' ? res : JSON.parse(res)
+      const audios = (data?.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'))
+      if (audios.length > 0) {
+        audios.sort((a, b) => (parseInt(b.bitrate, 10) || 0) - (parseInt(a.bitrate, 10) || 0))
+        return {
+          streamUrl: audios[0].url,
+          title: data.title || '',
+          artist: data.author || '',
+          duration: data.lengthSeconds ? parseInt(data.lengthSeconds, 10) : 210,
+          coverUrl: (data.videoThumbnails && data.videoThumbnails[0]?.url) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+        }
       }
     } catch {}
   }
+  return null
+}
 
-  if (results.length === 0) {
-    throw new Error(`Could not find audio tracks matching "${cleanQ}".`)
-  }
-
-  // Pick best matching result
-  let top = results[0]
-  const qLow = cleanQ.toLowerCase()
-  for (const r of results) {
-    const art = (r.primary_artists || r.more_info?.primary_artists || '').toLowerCase()
-    const tit = (r.song || r.title || '').toLowerCase()
-    if (qLow.includes(art) && qLow.includes(tit)) {
-      top = r
-      break
-    }
-  }
-
-  const title = top.song || top.title || cleanQ
-  const artist = top.primary_artists || top.more_info?.primary_artists || 'Unknown Artist'
-  const album = top.album || 'Unknown Album'
-  const year = top.year || top.more_info?.year || '2026'
-  const duration = parseInt(top.duration || top.more_info?.duration || '215', 10)
-  const coverUrl = (top.image || top.more_info?.image || '')
-    .replace('150x150', '500x500')
-    .replace('50x50', '500x500')
-
-  // Get encrypted media URL
-  let encUrl = top.encrypted_media_url
-  if (!encUrl && top.id) {
+async function searchYouTubeVideoId(query) {
+  if (!query) return null
+  const instances = getInvidiousInstances()
+  for (const inst of instances) {
     try {
-      const dUrl = `https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=${top.id}`
-      const dData = await nativeGet(dUrl)
-      if (dData && dData[top.id]) {
-        encUrl = dData[top.id].encrypted_media_url
+      const res = await nativeGet(`${inst}/api/v1/search?q=${encodeURIComponent(query)}&type=video`, {}, 5000)
+      const list = typeof res === 'object' ? res : JSON.parse(res)
+      if (Array.isArray(list) && list.length > 0 && list[0].videoId) {
+        return list[0].videoId
       }
     } catch {}
   }
+  return null
+}
 
-  let streamUrl = decryptJioSaavnMediaUrl(encUrl)
-  if (!streamUrl && top.more_info?.vlink) {
-    streamUrl = top.more_info.vlink
+function cleanNoise(str) {
+  if (!str) return ''
+  return str
+    .replace(/[\(\[](?:Official\s*(?:Music\s*)?Video|Official\s*Audio|Audio|Lyric\s*Video|Lyrics|Visualizer|HD|4K|Remaster(?:ed)?|OST|Soundtrack|English\s*[\/\&]\s*Romanji\s*Lyrics|Romaji\s*Lyrics|English\s*Lyrics)[^\]\)]*[\)\]]/gi, '')
+    .replace(/\b(?:Official\s*(?:Music\s*)?Video|Audio|Lyric\s*Video|English\s*[\/\&]\s*Romanji\s*Lyrics|Romaji\s*Lyrics|English\s*Lyrics|Lyrics|HD|4K)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[-–—|: \t]+|[-–—|: \t]+$/g, '')
+}
+
+function cleanTrackTitle(raw) {
+  return cleanNoise(raw)
+}
+
+function isFuzzyTitleMatch(expectedTitle, candidateTitle) {
+  if (!expectedTitle || !candidateTitle) return false
+  const exp = cleanNoise(expectedTitle).toLowerCase().replace(/[^a-z0-9]/g, ' ').trim()
+  const cand = cleanNoise(candidateTitle).toLowerCase().replace(/[^a-z0-9]/g, ' ').trim()
+  if (!exp || !cand) return false
+  if (exp === cand || exp.includes(cand) || cand.includes(exp)) return true
+
+  const expWords = exp.split(/\s+/).filter(w => w.length > 1)
+  const candWords = cand.split(/\s+/).filter(w => w.length > 1)
+  if (expWords.length === 0 || candWords.length === 0) return false
+
+  // If expected has distinctive long words (>= 5 chars), check that they appear in candidate
+  const longWords = expWords.filter(w => w.length >= 5)
+  if (longWords.length > 0) {
+    const hasLongWordMatch = longWords.some(w => candWords.includes(w))
+    if (!hasLongWordMatch) return false
   }
 
-  if (!streamUrl) {
-    throw new Error(`Unable to extract audio stream for "${title}".`)
+  const common = expWords.filter(w => candWords.includes(w))
+  const unionLen = new Set([...expWords, ...candWords]).size
+  const jaccard = unionLen > 0 ? (common.length / unionLen) : 0
+  return jaccard >= 0.5 || (common.length >= 2 && common.length >= expWords.length * 0.7)
+}
+
+function parseArtistAndTitle(combined, fallbackArtist = '') {
+  if (!combined) return { artist: fallbackArtist || 'Unknown Artist', title: 'Unknown Track' }
+
+  // Check for pipe separator: e.g. 'Song - Tag | Show - Artist'
+  const pipeParts = combined.split(/\s*\|\s*/).map(cleanNoise).filter(Boolean)
+  const chunks = []
+  for (const part of pipeParts) {
+    const subParts = part.split(/\s+[-–—]\s+/).map(cleanNoise).filter(Boolean)
+    chunks.push(...subParts)
   }
 
+  if (chunks.length === 0) {
+    return { artist: fallbackArtist || 'Unknown Artist', title: cleanNoise(combined) || 'Unknown Track' }
+  }
+  if (chunks.length === 1) {
+    return { artist: fallbackArtist || 'Unknown Artist', title: chunks[0] }
+  }
+  if (chunks.length === 2) {
+    return { artist: chunks[0], title: chunks[1] }
+  }
+
+  // 3 or more chunks (e.g. 'Kita Saitama Blues', 'Crayon Shinchan', 'Fujiwara Keiji')
   return {
-    title,
-    artist,
-    album,
-    year,
-    duration,
-    streamUrl,
-    coverUrl
+    artist: chunks.slice(1).join(', '),
+    title: chunks[0]
   }
+}
+
+async function searchCatalogWithValidation(targetTitle, targetArtist = '') {
+  if (!targetTitle) return null
+  const cleanTit = cleanNoise(targetTitle)
+  const cleanArt = (targetArtist && targetArtist !== 'Direct Acquisition' && targetArtist !== 'Unknown Artist') ? cleanNoise(targetArtist) : ''
+
+  const searchCandidates = []
+  if (cleanArt && cleanTit) searchCandidates.push(`${cleanArt} ${cleanTit}`)
+  if (cleanTit) searchCandidates.push(cleanTit)
+
+  let results = []
+  for (const target of searchCandidates) {
+    if (!target || target.length < 2) continue
+    try {
+      const sUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=15&q=${encodeURIComponent(target)}`
+      const sData = await nativeGet(sUrl)
+      if (sData && sData.results && sData.results.length > 0) {
+        results = sData.results
+        break
+      }
+    } catch (e) {
+      console.warn(`[SheroFetch On-Device] JioSaavn search notice for "${target}":`, e)
+    }
+  }
+
+  if (results.length > 0) {
+    let top = null
+    for (const r of results) {
+      const art = (r.primary_artists || r.more_info?.primary_artists || '').toLowerCase()
+      const tit = (r.song || r.title || '').toLowerCase()
+
+      const titleMatches = isFuzzyTitleMatch(cleanTit, tit)
+      const artistMatches = cleanArt ? isFuzzyTitleMatch(cleanArt, art) : true
+
+      if (titleMatches && artistMatches) {
+        top = r
+        break
+      }
+    }
+
+    if (top) {
+      const title = top.song || top.title || cleanTit
+      const artist = top.primary_artists || top.more_info?.primary_artists || 'Unknown Artist'
+      const album = top.album || 'Unknown Album'
+      const year = top.year || top.more_info?.year || '2026'
+      const duration = parseInt(top.duration || top.more_info?.duration || '215', 10)
+      const coverUrl = (top.image || top.more_info?.image || '')
+        .replace('150x150', '500x500')
+        .replace('50x50', '500x500')
+
+      let encUrl = top.encrypted_media_url
+      if (!encUrl && top.id) {
+        try {
+          const dUrl = `https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=${top.id}`
+          const dData = await nativeGet(dUrl)
+          if (dData && dData[top.id]) {
+            encUrl = dData[top.id].encrypted_media_url
+          }
+        } catch {}
+      }
+
+      let streamUrl = decryptJioSaavnMediaUrl(encUrl)
+      if (!streamUrl && top.more_info?.vlink) {
+        streamUrl = top.more_info.vlink
+      }
+
+      if (streamUrl) {
+        return {
+          title,
+          artist,
+          album,
+          year,
+          duration,
+          streamUrl,
+          coverUrl
+        }
+      }
+    } else {
+      console.log(`[SheroFetch On-Device] JioSaavn candidates rejected: no fuzzy title match for "${cleanTit}".`)
+    }
+  }
+  return null
+}
+
+// Standalone on-device track resolver (Dynamic multi-catalog: JioSaavn + iTunes + YouTube)
+async function resolveOnDeviceTrack(query, exactTitle = '', exactArtist = '', exactUrl = '') {
+  let cleanQ = cleanNoise(query)
+  if (!cleanQ && query) cleanQ = query.trim()
+  console.log(`[SheroFetch On-Device] Resolving: "${cleanQ}" (ExactURL: ${exactUrl || 'None'})`)
+
+  // PATH 1: Direct YouTube URL or explicit link provided
+  const targetUrl = exactUrl || (query.startsWith('http://') || query.startsWith('https://') ? query : '')
+  const ytMatch = targetUrl.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/)
+  if (ytMatch) {
+    const videoId = ytMatch[1]
+    console.log(`[SheroFetch On-Device] Direct YouTube link detected (ID: ${videoId}). Resolving stream...`)
+    const ytStream = await resolveYouTubeAudioStream(videoId)
+    if (ytStream && ytStream.streamUrl) {
+      const parsed = parseArtistAndTitle(ytStream.title, ytStream.artist)
+      return {
+        title: exactTitle || parsed.title || ytStream.title,
+        artist: exactArtist || parsed.artist || ytStream.artist,
+        album: 'YouTube Audio Master',
+        year: '2026',
+        duration: ytStream.duration || 210,
+        streamUrl: ytStream.streamUrl,
+        coverUrl: ytStream.coverUrl
+      }
+    }
+
+    // Direct YouTube stream resolution unavailable (e.g. rate-limited public instances)
+    // Check if the song exists in the master streaming catalog with STRICT fuzzy title match
+    const targetTitle = exactTitle || cleanQ
+    const targetArtist = exactArtist || ''
+    if (targetTitle && targetTitle.length > 2) {
+      console.log(`[SheroFetch On-Device] Querying master catalog for: "${targetTitle}"`)
+      const catalogMatch = await searchCatalogWithValidation(targetTitle, targetArtist)
+      if (catalogMatch && catalogMatch.streamUrl) {
+        console.log(`[SheroFetch On-Device] Authentic catalog track acquired: "${catalogMatch.title}" by "${catalogMatch.artist}"`)
+        return catalogMatch
+      }
+    }
+
+    throw new Error(`Direct audio stream for this YouTube track is currently restricted by YouTube. If this is a commercial song, please search by song title directly.`)
+  }
+
+  // PATH 2: Search Candidates via Master Catalog (JioSaavn)
+  const targetTitle = exactTitle || cleanQ
+  const targetArtist = exactArtist || ''
+  const catalogMatch = await searchCatalogWithValidation(targetTitle, targetArtist)
+  if (catalogMatch && catalogMatch.streamUrl) {
+    return catalogMatch
+  }
+
+  // PATH 3: Global / Anime / J-Pop / Indie Fallback (iTunes + Invidious / PC node)
+  console.log(`[SheroFetch On-Device] Querying global catalog & YouTube stream mesh for: "${cleanQ}"`)
+  let fallbackTitle = exactTitle || cleanQ
+  let fallbackArtist = exactArtist || 'Unknown Artist'
+  let fallbackAlbum = 'Digital Master'
+  let fallbackCover = null
+
+  try {
+    const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQ)}&entity=song&limit=5`
+    const itunesRes = await nativeGet(itunesUrl)
+    const itunesData = typeof itunesRes === 'object' ? itunesRes : JSON.parse(itunesRes)
+    if (itunesData?.results && itunesData.results.length > 0) {
+      const matchedIt = itunesData.results.find(r => isFuzzyTitleMatch(cleanQ, r.trackName))
+      if (matchedIt) {
+        fallbackTitle = matchedIt.trackName || fallbackTitle
+        fallbackArtist = matchedIt.artistName || fallbackArtist
+        fallbackAlbum = matchedIt.collectionName || fallbackAlbum
+        if (matchedIt.artworkUrl100) {
+          fallbackCover = matchedIt.artworkUrl100.replace('100x100bb.jpg', '1400x1400bb.jpg')
+        }
+      }
+    }
+  } catch {}
+
+  // Find YouTube video ID
+  const searchQ = `${fallbackArtist !== 'Unknown Artist' ? fallbackArtist : ''} ${fallbackTitle}`.trim()
+  const foundVidId = await searchYouTubeVideoId(searchQ) || await searchYouTubeVideoId(cleanQ)
+  if (foundVidId) {
+    const ytStream = await resolveYouTubeAudioStream(foundVidId)
+    if (ytStream && ytStream.streamUrl) {
+      return {
+        title: fallbackTitle,
+        artist: fallbackArtist,
+        album: fallbackAlbum,
+        year: '2026',
+        duration: ytStream.duration || 210,
+        streamUrl: ytStream.streamUrl,
+        coverUrl: fallbackCover || ytStream.coverUrl
+      }
+    }
+  }
+
+  throw new Error(`Could not find audio tracks matching "${cleanQ || query}".`)
 }
 
 // Standalone synced lyrics resolver via LRCLIB
@@ -357,28 +637,6 @@ async function fetchSyncedLyrics(artist, title) {
     console.warn('LRCLIB fetch error:', err)
   }
   return `[00:00.00] ${artist} - ${title}\n[00:05.00] (Instrumental / Lyrics not available)`
-}
-
-function cleanTrackTitle(raw) {
-  if (!raw) return ''
-  return raw
-    .replace(/\s*[\(\[](?:Official\s*(?:Music\s*)?Video|Audio|Lyric\s*Video|Lyrics|Visualizer|HD|4K|Remastered)[\)\]]/gi, '')
-    .replace(/\s*\|\s*.*$/g, '')
-    .trim()
-}
-
-function parseArtistAndTitle(combined, fallbackArtist = '') {
-  const parts = combined.split(/\s+[-–—]\s+/)
-  if (parts.length >= 2) {
-    return {
-      artist: parts[0].trim(),
-      title: cleanTrackTitle(parts.slice(1).join(' - ')).trim()
-    }
-  }
-  return {
-    artist: fallbackArtist.trim() || 'Unknown Artist',
-    title: cleanTrackTitle(combined).trim()
-  }
 }
 
 // Comprehensive on-device music URL resolver: Spotify, YouTube/YTMusic, Apple Music, JioSaavn
@@ -523,7 +781,16 @@ async function resolveMusicUrl(url) {
           artist: parsed.artist,
           query: `${parsed.artist} - ${parsed.title}`,
           source: 'youtube',
-          tracks: [{ title: parsed.title, artist: parsed.artist, query: `${parsed.artist} - ${parsed.title}` }]
+          direct_url: cleanUrl,
+          directUrl: cleanUrl,
+          tracks: [{
+            title: parsed.title,
+            artist: parsed.artist,
+            query: `${parsed.artist} - ${parsed.title}`,
+            direct_url: cleanUrl,
+            directUrl: cleanUrl,
+            source: 'youtube'
+          }]
         }
       } catch (oErr) {
         console.warn('[SheroFetch] YouTube oEmbed error:', oErr)
@@ -747,6 +1014,16 @@ async function scanOnDeviceMusicLibrary() {
   return tracks
 }
 
+let activeGlobalAudio = null
+let activePlayingSrc = null
+
+export function getAudioPlayerState() {
+  return {
+    isPlaying: Boolean(activeGlobalAudio && !activeGlobalAudio.paused),
+    currentSrc: activePlayingSrc
+  }
+}
+
 export async function invoke(cmd, args = {}) {
   if (typeof window !== 'undefined') window.sheroInvoke = invoke
   if (isTauri) {
@@ -886,15 +1163,48 @@ export async function invoke(cmd, args = {}) {
     }
 
     case 'open_file': {
-      const filePath = args.filePath || ''
+      const filePath = args.filePath || args.file_path || args.file_url || ''
       if (filePath) {
         try {
-          // Play audio file
+          if (activeGlobalAudio) {
+            if (activePlayingSrc === filePath) {
+              if (activeGlobalAudio.paused) {
+                activeGlobalAudio.play().catch(e => console.warn('Resume notice:', e))
+              } else {
+                activeGlobalAudio.pause()
+              }
+              return true
+            } else {
+              activeGlobalAudio.pause()
+              activeGlobalAudio.currentTime = 0
+              activeGlobalAudio = null
+              activePlayingSrc = null
+            }
+          }
+
           const audio = new Audio(filePath)
+          activeGlobalAudio = audio
+          activePlayingSrc = filePath
+          audio.onended = () => {
+            if (activeGlobalAudio === audio) {
+              activeGlobalAudio = null
+              activePlayingSrc = null
+            }
+          }
           audio.play().catch(e => console.warn('Native playback info:', e))
         } catch (e) {
           console.warn('Playback error:', e)
         }
+      }
+      return true
+    }
+
+    case 'stop_playback': {
+      if (activeGlobalAudio) {
+        activeGlobalAudio.pause()
+        activeGlobalAudio.currentTime = 0
+        activeGlobalAudio = null
+        activePlayingSrc = null
       }
       return true
     }
@@ -1108,23 +1418,66 @@ export async function invoke(cmd, args = {}) {
       return true
     }
 
+    case 'get_server_url': {
+      return getServerUrl()
+    }
+
+    case 'set_server_url': {
+      setServerUrl(args.url || '')
+      return getServerUrl()
+    }
+
+    case 'save_gemini_key': {
+      const key = (args.key || '').trim()
+      try {
+        if (key) localStorage.setItem('sherofetch_gemini_key', key)
+        else localStorage.removeItem('sherofetch_gemini_key')
+      } catch {}
+      return { success: true }
+    }
+
+    case 'get_gemini_key': {
+      try {
+        return localStorage.getItem('sherofetch_gemini_key') || ''
+      } catch {
+        return ''
+      }
+    }
+
+    case 'get_invidious_instances': {
+      return getInvidiousInstances()
+    }
+
+    case 'set_invidious_instances': {
+      if (Array.isArray(args.instances)) {
+        setInvidiousInstances(args.instances)
+      }
+      return getInvidiousInstances()
+    }
+
     case 'download_song': {
       const q = args.query || ''
       const prefFmt = (args.preferred_format || args.preferredFormat || 'flac').toLowerCase()
       const acqMode = args.acq_mode || args.acqMode || getAcquisitionMode()
-      console.log(`[SheroFetch Hybrid Download] Initiating ${prefFmt.toUpperCase()} download in [${acqMode.toUpperCase()}] mode for: "${q}"`)
+      const exactUrlTarget = args.exact_url || args.exactUrl || args.direct_url || args.directUrl || (q.startsWith('http') ? q : '')
+      const exactTitleTarget = args.exact_title || args.exactTitle || ''
+      const exactArtistTarget = args.exact_artist || args.exactArtist || ''
+      console.log(`[SheroFetch Hybrid Download] Initiating ${prefFmt.toUpperCase()} download in [${acqMode.toUpperCase()}] mode for: "${q}" (TargetURL: ${exactUrlTarget || 'None'})`)
 
-      // --- TIER 1: Try Hard to Acquire Genuine Soulseek / P2P Lossless FLAC ---
+      // --- TIER 1: Try Hard to Acquire Genuine Soulseek / P2P Lossless FLAC or PC Studio Node ---
       if (acqMode !== 'instant_studio') {
         const reachableHost = await findReachableLosslessServer()
         if (reachableHost) {
           try {
-            console.log(`[SheroFetch Hybrid] Active lossless P2P server detected at ${reachableHost}. Querying Soulseek mesh for bit-perfect FLAC...`)
+            console.log(`[SheroFetch Hybrid] Active lossless P2P / Studio server detected at ${reachableHost}. Querying engine for audio...`)
             const serverRes = await nativePost(`${reachableHost}/api/download`, {
               query: q,
               preferred_format: prefFmt,
               override_album: args.override_album,
-              selection_index: args.selection_index || 0
+              selection_index: args.selection_index || 0,
+              exact_url: exactUrlTarget,
+              exact_title: exactTitleTarget,
+              exact_artist: exactArtistTarget
             })
 
             if (serverRes && serverRes.status === 'success') {
@@ -1276,173 +1629,184 @@ export async function invoke(cmd, args = {}) {
       console.log(`[SheroFetch Autonomous Engine] Resolving: "${q}" (Format: ${prefFmt.toUpperCase()}) directly on device...`)
 
       // --- PATH B: On-Device Standalone Engine ---
-      const resolved = await resolveOnDeviceTrack(q)
-      console.log(`[SheroFetch Download] Resolved: "${resolved.title}" by "${resolved.artist}" (Stream: ${resolved.streamUrl})`)
-
-      const safeArtist = sanitizeName(resolved.artist)
-      const safeAlbum = sanitizeName(args.override_album || resolved.album)
-      const safeTrack = sanitizeName(resolved.title)
-      
-      const fileExt = prefFmt === 'flac' ? 'flac' : (prefFmt === 'wav' ? 'wav' : (prefFmt === 'm4a' ? 'm4a' : 'mp3'))
-      const fileName = `${safeArtist} - ${safeTrack}.${fileExt}`
-      const folderPath = `Music/${safeArtist}/${safeAlbum}`
-      const filePath = `${folderPath}/${fileName}`
-      const lrcPath = `${folderPath}/${safeArtist} - ${safeTrack}.lrc`
-      const coverPath = `${folderPath}/cover.jpg`
-
-      let finalAudioUrl = resolved.streamUrl
-      let fileSizeMb = 9.8
-
-      // Step 2: Download & Encode to Real FLAC (Zero-CORS Native Acquisition)
       try {
-        if (prefFmt === 'flac') {
-          console.log(`[SheroFetch FLAC] Acquiring master audio stream to encode into genuine bit-perfect FLAC...`)
-          let arrayBuffer = null
+        const exactUrlTarget = args.exact_url || args.exactUrl || args.direct_url || args.directUrl || (q.startsWith('http') ? q : '')
+        const resolved = await resolveOnDeviceTrack(q, args.exact_title || args.exactTitle, args.exact_artist || args.exactArtist, exactUrlTarget)
+        console.log(`[SheroFetch Download] Resolved: "${resolved.title}" by "${resolved.artist}" (Stream: ${resolved.streamUrl})`)
 
-          if (Capacitor.isNativePlatform()) {
-            const tempFileName = `temp_raw_${Date.now()}.bin`
-            console.log(`[SheroFetch FLAC] Downloading master stream natively via Java backend: ${tempFileName}`)
-            await Filesystem.downloadFile({
-              url: resolved.streamUrl,
-              path: tempFileName,
-              directory: Directory.Cache
-            })
-            const fileData = await Filesystem.readFile({
-              path: tempFileName,
-              directory: Directory.Cache
-            })
-            if (!fileData || !fileData.data) {
-              throw new Error('Failed to read native cached stream')
-            }
-            arrayBuffer = base64ToArrayBuffer(fileData.data)
-            try {
-              await Filesystem.deleteFile({ path: tempFileName, directory: Directory.Cache })
-            } catch {}
-          } else {
-            const resp = await fetch(resolved.streamUrl)
-            arrayBuffer = await resp.arrayBuffer()
-          }
+        const safeArtist = sanitizeName(resolved.artist)
+        const safeAlbum = sanitizeName(args.override_album || resolved.album)
+        const safeTrack = sanitizeName(resolved.title)
+        
+        const fileExt = prefFmt === 'flac' ? 'flac' : (prefFmt === 'wav' ? 'wav' : (prefFmt === 'm4a' ? 'm4a' : 'mp3'))
+        const fileName = `${safeArtist} - ${safeTrack}.${fileExt}`
+        const folderPath = `Music/${safeArtist}/${safeAlbum}`
+        const filePath = `${folderPath}/${fileName}`
+        const lrcPath = `${folderPath}/${safeArtist} - ${safeTrack}.lrc`
+        const coverPath = `${folderPath}/cover.jpg`
 
-          console.log(`[SheroFetch FLAC] Transcoding raw audio PCM to bit-perfect FLAC...`)
-          const { flacBytes, duration: decDur } = await transcodeStreamToFlac(arrayBuffer)
-          console.log(`[SheroFetch FLAC] Successfully encoded ${flacBytes.length} bytes of verified fLaC stream!`)
+        let finalAudioUrl = resolved.streamUrl
+        let fileSizeMb = 9.8
 
-          if (Capacitor.isNativePlatform()) {
-            const singleAudioPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${fileName}`
-            await writeChunkedFile(singleAudioPath, Directory.ExternalStorage, flacBytes)
-            const stat = await Filesystem.getUri({
-              path: singleAudioPath,
-              directory: Directory.ExternalStorage
-            })
-            if (stat?.uri) {
-              finalAudioUrl = Capacitor.convertFileSrc(stat.uri)
-            }
-          } else {
-            const blob = new Blob([flacBytes], { type: 'audio/flac' })
-            finalAudioUrl = URL.createObjectURL(blob)
-          }
-          fileSizeMb = parseFloat((flacBytes.length / (1024 * 1024)).toFixed(2))
-        } else {
-          // Standard download for non-FLAC (Single write to ExternalStorage)
-          console.log(`[SheroFetch Download] Downloading audio via native stream...`)
-          if (Capacitor.isNativePlatform()) {
-            const singleAudioPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${fileName}`
-            const dlRes = await Filesystem.downloadFile({
-              url: resolved.streamUrl,
-              path: singleAudioPath,
-              directory: Directory.ExternalStorage,
-              recursive: true
-            })
-            if (dlRes?.path) {
-              finalAudioUrl = Capacitor.convertFileSrc(dlRes.path)
+        // Step 2: Download & Encode to Real FLAC (Zero-CORS Native Acquisition)
+        try {
+          if (prefFmt === 'flac') {
+            console.log(`[SheroFetch FLAC] Acquiring master audio stream to encode into genuine bit-perfect FLAC...`)
+            let arrayBuffer = null
+
+            if (Capacitor.isNativePlatform()) {
+              const tempFileName = `temp_raw_${Date.now()}.bin`
+              console.log(`[SheroFetch FLAC] Downloading master stream natively via Java backend: ${tempFileName}`)
+              await Filesystem.downloadFile({
+                url: resolved.streamUrl,
+                path: tempFileName,
+                directory: Directory.Cache
+              })
+              const fileData = await Filesystem.readFile({
+                path: tempFileName,
+                directory: Directory.Cache
+              })
+              if (!fileData || !fileData.data) {
+                throw new Error('Failed to read native cached stream')
+              }
+              arrayBuffer = base64ToArrayBuffer(fileData.data)
               try {
-                const stat = await Filesystem.stat({ path: singleAudioPath, directory: Directory.ExternalStorage })
-                if (stat?.size) fileSizeMb = parseFloat((stat.size / (1024 * 1024)).toFixed(2))
+                await Filesystem.deleteFile({ path: tempFileName, directory: Directory.Cache })
               } catch {}
+            } else {
+              const resp = await fetch(resolved.streamUrl)
+              arrayBuffer = await resp.arrayBuffer()
             }
+
+            console.log(`[SheroFetch FLAC] Transcoding raw audio PCM to bit-perfect FLAC...`)
+            const { flacBytes, duration: decDur } = await transcodeStreamToFlac(arrayBuffer)
+            console.log(`[SheroFetch FLAC] Successfully encoded ${flacBytes.length} bytes of verified fLaC stream!`)
+
+            if (Capacitor.isNativePlatform()) {
+              const singleAudioPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${fileName}`
+              await writeChunkedFile(singleAudioPath, Directory.ExternalStorage, flacBytes)
+              const stat = await Filesystem.getUri({
+                path: singleAudioPath,
+                directory: Directory.ExternalStorage
+              })
+              if (stat?.uri) {
+                finalAudioUrl = Capacitor.convertFileSrc(stat.uri)
+              }
+            } else {
+              const blob = new Blob([flacBytes], { type: 'audio/flac' })
+              finalAudioUrl = URL.createObjectURL(blob)
+            }
+            fileSizeMb = parseFloat((flacBytes.length / (1024 * 1024)).toFixed(2))
+          } else {
+            // Standard download for non-FLAC (Single write to ExternalStorage)
+            console.log(`[SheroFetch Download] Downloading audio via native stream...`)
+            if (Capacitor.isNativePlatform()) {
+              const singleAudioPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${fileName}`
+              const dlRes = await Filesystem.downloadFile({
+                url: resolved.streamUrl,
+                path: singleAudioPath,
+                directory: Directory.ExternalStorage,
+                recursive: true
+              })
+              if (dlRes?.path) {
+                finalAudioUrl = Capacitor.convertFileSrc(dlRes.path)
+                try {
+                  const stat = await Filesystem.stat({ path: singleAudioPath, directory: Directory.ExternalStorage })
+                  if (stat?.size) fileSizeMb = parseFloat((stat.size / (1024 * 1024)).toFixed(2))
+                } catch {}
+              }
+            }
+          }
+        } catch (dlErr) {
+          console.error('[SheroFetch Download] Audio acquisition error:', dlErr)
+          throw new Error(`Audio download failed: ${dlErr.message || dlErr}`)
+        }
+
+        // Step 3: Download cover art (Single write to ExternalStorage)
+        let finalCoverUrl = resolved.coverUrl
+        if (resolved.coverUrl) {
+          try {
+            if (Capacitor.isNativePlatform()) {
+              const singleCoverPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/cover.jpg`
+              const cRes = await Filesystem.downloadFile({
+                url: resolved.coverUrl,
+                path: singleCoverPath,
+                directory: Directory.ExternalStorage,
+                recursive: true
+              })
+              if (cRes?.path) {
+                finalCoverUrl = Capacitor.convertFileSrc(cRes.path)
+                localStorage.setItem(`sherofetch_cover_${singleCoverPath}`, finalCoverUrl)
+              }
+            }
+          } catch (cErr) {
+            console.warn('Cover save notice:', cErr)
           }
         }
-      } catch (dlErr) {
-        console.error('[SheroFetch Download] Audio acquisition error:', dlErr)
-        throw new Error(`Audio download failed: ${dlErr.message || dlErr}`)
-      }
 
-      // Step 3: Download cover art (Single write to ExternalStorage)
-      let finalCoverUrl = resolved.coverUrl
-      if (resolved.coverUrl) {
+        // Step 4: Fetch and save synchronized lyrics (.lrc) (Single write to ExternalStorage)
+        const syncedLyrics = await fetchSyncedLyrics(resolved.artist, resolved.title)
         try {
           if (Capacitor.isNativePlatform()) {
-            const singleCoverPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/cover.jpg`
-            const cRes = await Filesystem.downloadFile({
-              url: resolved.coverUrl,
-              path: singleCoverPath,
+            const singleLrcPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${safeArtist} - ${safeTrack}.lrc`
+            await Filesystem.writeFile({
+              path: singleLrcPath,
+              data: syncedLyrics,
               directory: Directory.ExternalStorage,
+              encoding: Encoding.UTF8,
               recursive: true
             })
-            if (cRes?.path) {
-              finalCoverUrl = Capacitor.convertFileSrc(cRes.path)
-              localStorage.setItem(`sherofetch_cover_${singleCoverPath}`, finalCoverUrl)
-            }
           }
-        } catch (cErr) {
-          console.warn('Cover save notice:', cErr)
+          console.log(`[SheroFetch Download] Saved synced lyrics (${syncedLyrics.length} chars)`)
+        } catch (lErr) {
+          console.warn('Lyrics write notice:', lErr)
         }
-      }
 
-      // Step 4: Fetch and save synchronized lyrics (.lrc) (Single write to ExternalStorage)
-      const syncedLyrics = await fetchSyncedLyrics(resolved.artist, resolved.title)
-      try {
-        if (Capacitor.isNativePlatform()) {
-          const singleLrcPath = `Music/SheroFetch/${safeArtist}/${safeAlbum}/${safeArtist} - ${safeTrack}.lrc`
-          await Filesystem.writeFile({
-            path: singleLrcPath,
-            data: syncedLyrics,
-            directory: Directory.ExternalStorage,
-            encoding: Encoding.UTF8,
-            recursive: true
-          })
+        // Step 5: Finalize library item
+        const item = {
+          id: `trk-${Date.now()}`,
+          mbid: null,
+          artist: resolved.artist,
+          track: resolved.title,
+          album: resolved.album,
+          year: resolved.year,
+          folder_path: folderPath,
+          file_path: filePath,
+          file_url: finalAudioUrl,
+          audio_stream_url: resolved.streamUrl,
+          cover_path: finalCoverUrl || coverPath,
+          lrc_path: lrcPath,
+          has_lrc: Boolean(syncedLyrics),
+          has_cover: Boolean(resolved.coverUrl),
+          duration: resolved.duration,
+          file_size_mb: fileSizeMb,
+          source_used: prefFmt === 'flac' ? 'Studio FLAC (320kbps HD Fallback)' : 'Studio AAC (320kbps)',
+          downloaded_at: new Date().toISOString()
         }
-        console.log(`[SheroFetch Download] Saved synced lyrics (${syncedLyrics.length} chars)`)
-      } catch (lErr) {
-        console.warn('Lyrics write notice:', lErr)
+
+        // Step 6: Persist in local library
+        try {
+          const current = JSON.parse(localStorage.getItem('sherofetch_library') || '[]')
+          const updated = [item, ...current.filter(x => x.track !== item.track || x.artist !== item.artist)]
+          localStorage.setItem('sherofetch_library', JSON.stringify(updated))
+        } catch {}
+
+        console.log(`[SheroFetch Download] Track successfully installed on device!`)
+        return item
+      } catch (err) {
+        console.error(`[SheroFetch Download Error] Failed to acquire track "${q}":`, err)
+        throw new Error(err?.message || `Failed to acquire "${q}". Please check network connectivity or try another query.`)
       }
-
-      // Step 5: Finalize library item
-      const item = {
-        id: `trk-${Date.now()}`,
-        mbid: null,
-        artist: resolved.artist,
-        track: resolved.title,
-        album: resolved.album,
-        year: resolved.year,
-        folder_path: folderPath,
-        file_path: filePath,
-        file_url: finalAudioUrl,
-        audio_stream_url: resolved.streamUrl,
-        cover_path: finalCoverUrl || coverPath,
-        lrc_path: lrcPath,
-        has_lrc: Boolean(syncedLyrics),
-        has_cover: Boolean(resolved.coverUrl),
-        duration: resolved.duration,
-        file_size_mb: fileSizeMb,
-        source_used: prefFmt === 'flac' ? 'Studio FLAC (320kbps HD Fallback)' : 'Studio AAC (320kbps)',
-        downloaded_at: new Date().toISOString()
-      }
-
-      // Step 6: Persist in local library
-      try {
-        const current = JSON.parse(localStorage.getItem('sherofetch_library') || '[]')
-        const updated = [item, ...current.filter(x => x.track !== item.track || x.artist !== item.artist)]
-        localStorage.setItem('sherofetch_library', JSON.stringify(updated))
-      } catch {}
-
-      console.log(`[SheroFetch Download] Track successfully installed on device!`)
-      return item
     }
 
-    default:
-      console.warn(`Unhandled command: ${cmd}`, args)
+    default: {
+      const sanitizedArgs = { ...args }
+      if (sanitizedArgs.password) sanitizedArgs.password = '***'
+      if (sanitizedArgs.key) sanitizedArgs.key = '***'
+      if (sanitizedArgs.token) sanitizedArgs.token = '***'
+      console.warn(`Unhandled command: ${cmd}`, sanitizedArgs)
       return null
+    }
   }
 }
 
