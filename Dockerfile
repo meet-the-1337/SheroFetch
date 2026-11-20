@@ -8,16 +8,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Download sockseek binary during build
-RUN curl -L -o /usr/local/bin/sockseek https://github.com/meet-the-1337/sockseek/releases/download/v1.0.0/sockseek-linux-x64 \
+# Soulseek client (upstream fiso64/sockseek release)
+ARG SOCKSEEK_VERSION=3.0.5
+RUN curl -fsSL https://github.com/fiso64/sockseek/releases/download/v${SOCKSEEK_VERSION}/sockseek_${SOCKSEEK_VERSION}_linux-x64.tar.gz \
+    | tar xz -C /usr/local/bin sockseek \
     && chmod +x /usr/local/bin/sockseek
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt fastapi uvicorn yt-dlp
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 EXPOSE 5050
 ENV PORT=5050
+# Hosted gateway: accept internet clients; set SHEROFETCH_TOKEN in the host dashboard to require a token
+ENV SHEROFETCH_ALLOW_PUBLIC=1
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 CMD ["sh", "-c", "uvicorn backend_server:app --host 0.0.0.0 --port ${PORT:-5050}"]

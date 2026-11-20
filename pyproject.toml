@@ -42,8 +42,7 @@ sherofetch-server = "backend_server:main"
 py-modules = [
     "cli", "config_manager", "universal_resolver", "five_gate_verifier",
     "backend_server", "checkpoint4_pipeline", "match_song", "playlist_resolver",
-    "path_manager", "download_cli", "search_cli", "spotify_sync_engine",
-    "batch_mp3_exporter", "sync_to_spotify_mp3",
+    "path_manager", "download_cli", "search_cli",
 ]
 
 [project.urls]

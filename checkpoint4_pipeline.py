@@ -227,7 +227,49 @@ def is_soulseek_server_reachable(timeout_sec: float = 2.0) -> bool:
         return False
 
 
+def _find_sockseek() -> Optional[str]:
+    for c in (shutil.which("sockseek"), shutil.which("sockseek.exe"),
+              str(Path.home() / ".local" / "bin" / "sockseek"), str(Path(__file__).parent / "bin" / "sockseek.exe")):
+        if c and Path(c).exists():
+            return c
+    return None
+
+
+def _verify_with_sockseek(user: str, password: str, timeout_sec: int = 40) -> Optional[Tuple[bool, str]]:
+    """Authoritative login check through sockseek itself. Returns None when it cannot decide."""
+    import tempfile
+    binary = _find_sockseek()
+    if not binary:
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            conf = Path(td) / "login.conf"
+            conf.write_text(f"username = {user}\npassword = {password}\n", encoding="utf-8")
+            os.chmod(conf, 0o600)  # keep the password off the process list and away from other users
+            proc = subprocess.run(
+                [binary, "sherofetch login probe", "-s", "-c", str(conf), "-o", td,
+                 "--print", "results", "--search-timeout", "500", "--no-progress", "-v"],
+                timeout=timeout_sec, **get_subprocess_kwargs())
+        out = (proc.stdout or "") + (proc.stderr or "")
+    except Exception:
+        return None
+    if re.search(r"Logged in as", out):
+        return True, "Authenticated"
+    if re.search(r"INVALIDPASS|invalid pass|rejected", out, re.IGNORECASE):
+        return False, "INVALIDPASS"
+    return None
+
+
 def verify_soulseek_credentials(user: str, password: str, timeout_sec: float = 3.0) -> Tuple[bool, str]:
+    """Check credentials: fast raw-protocol probe first, falling back to sockseek's own login when the probe stalls."""
+    result = _verify_raw_login(user, password, timeout_sec)
+    if result[0] or result[1] == "INVALIDPASS" or not user or not password:
+        return result
+    fallback = _verify_with_sockseek(user, password)
+    return fallback if fallback else result
+
+
+def _verify_raw_login(user: str, password: str, timeout_sec: float = 3.0) -> Tuple[bool, str]:
     """Fast protocol probe to check credentials directly against server.slsknet.org:2242 with MD5 challenge."""
     import socket
     import struct
@@ -314,11 +356,14 @@ def get_soulseek_credentials(validate: bool = False) -> Tuple[str, str]:
             is_valid, reason = _cached_soulseek_auth[2], _cached_soulseek_auth[3]
         else:
             is_valid, reason = verify_soulseek_credentials(u, p)
-            _cached_soulseek_auth = (u, p, is_valid, reason)
+            if is_valid or reason == "INVALIDPASS":
+                _cached_soulseek_auth = (u, p, is_valid, reason)
 
-        if not is_valid:
-            print(f"  [SOULSEEK] Saved credentials for user '{u}' failed verification ({reason}). Bypassing P2P...")
+        if not is_valid and reason == "INVALIDPASS":
+            print(f"  [SOULSEEK] Saved credentials for user '{u}' were rejected by the server. Bypassing P2P...")
             return "", ""
+        if not is_valid:
+            print(f"  [SOULSEEK] Could not pre-verify login ({reason}); letting sockseek try directly...")
 
     return u, p
 
@@ -336,7 +381,7 @@ def run_sockseek_query(
 ) -> Optional[Path]:
     """Execute sockseek download for a single query with robust P2P timeout, format preference, and multi-identity support."""
     # Fast check: If Soulseek central server port is unreachable, do not block or freeze!
-    if not is_soulseek_server_reachable(timeout_sec=1.5):
+    if not is_soulseek_server_reachable(timeout_sec=4):
         print(f"  [SOULSEEK] Server (server.slsknet.org:2242) unreachable. Bypassing P2P for query '{query_str}'...")
         return None
 
@@ -780,7 +825,7 @@ def download_waterfall_pipeline(
             pure_t = clean_t
 
         # 2. Isolate primary lead artist (strip featuring and secondary collaborators)
-        primary_artist = re.sub(r'(?i)\s*[\(\[]?(?:feat\.?|ft\.?|with).*$', '', artist).strip()
+        primary_artist = re.sub(r'(?i)\s*[\(\[]?\b(?:feat\.?|ft\.?|with)(?:\s|\.|$).*$', '', artist).strip()
         if "," in primary_artist:
             primary_artist = primary_artist.split(",")[0].strip()
         if " & " in primary_artist:
@@ -822,7 +867,7 @@ def download_waterfall_pipeline(
                 seen_queries.add(clean_q.lower())
                 variations.append(clean_q)
 
-        if not is_soulseek_server_reachable(timeout_sec=1.5):
+        if not is_soulseek_server_reachable(timeout_sec=4):
             print("  [TIER 1 - GREEN] Soulseek central server unreachable (timeout/maintenance). Fast-falling back to Tier 2 Studio Master...")
         else:
             u_check, _ = get_soulseek_credentials(validate=True)
@@ -841,7 +886,7 @@ def download_waterfall_pipeline(
                         cand = run_sockseek_query(
                             var_query,
                             output_dir,
-                            timeout_sec=15,
+                            timeout_sec=90,
                             prefer_flac=True,
                             audio_format="flac",
                             worker_id=worker_id,

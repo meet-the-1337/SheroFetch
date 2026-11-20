@@ -5,6 +5,8 @@ import subprocess
 import shutil
 import json
 import hashlib
+import ipaddress
+import secrets
 import urllib.parse
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
@@ -29,6 +31,59 @@ app.add_middleware(
 )
 
 DEFAULT_VAULT_DIR = DEFAULT_BASE_DIR
+
+# ── Access control ────────────────────────────────────────────────────────────
+# Loopback clients (the app on the same device) are always trusted.
+# LAN clients must send SHEROFETCH_TOKEN (header X-SheroFetch-Token or ?token=) when one is set.
+# Public-internet clients are refused unless SHEROFETCH_ALLOW_PUBLIC=1 (e.g. a hosted gateway).
+API_TOKEN = os.environ.get("SHEROFETCH_TOKEN", "").strip()
+ALLOW_PUBLIC = os.environ.get("SHEROFETCH_ALLOW_PUBLIC", "") == "1"
+PUBLIC_PATHS = {"/"}
+
+
+def _client_ip(request: Request):
+    try:
+        ip = ipaddress.ip_address(request.client.host if request.client else "")
+    except ValueError:
+        return None
+    return ip.ipv4_mapped if getattr(ip, "ipv4_mapped", None) else ip
+
+
+def _is_loopback(request: Request) -> bool:
+    ip = _client_ip(request)
+    return bool(ip and ip.is_loopback)
+
+
+@app.middleware("http")
+async def access_guard(request: Request, call_next):
+    if request.method == "OPTIONS" or _is_loopback(request):
+        return await call_next(request)
+    ip = _client_ip(request)
+    if not ALLOW_PUBLIC and not (ip and (ip.is_private or ip.is_link_local)):
+        return JSONResponse(status_code=403, content={"detail": "SheroFetch only serves the local network"})
+    if API_TOKEN and request.url.path not in PUBLIC_PATHS:
+        supplied = request.headers.get("x-sherofetch-token") or request.query_params.get("token") or ""
+        if not secrets.compare_digest(supplied, API_TOKEN):
+            return JSONResponse(status_code=401, content={"detail": "Missing or invalid SheroFetch token"})
+    return await call_next(request)
+
+
+def _library_path(path: str) -> Path:
+    """Resolve a client-supplied path and refuse anything outside the music library."""
+    p = Path(path).expanduser().resolve()
+    root = Path(DEFAULT_VAULT_DIR).expanduser().resolve()
+    if p != root and not p.is_relative_to(root):
+        raise HTTPException(status_code=403, detail="Access denied: path is outside the music library")
+    return p
+
+
+def _media_url(request: Request, endpoint: str, path, absolute: bool = False) -> str:
+    """Build a playable media URL; carries the token for LAN clients since <audio> cannot send headers."""
+    url = f"/api/audio/{endpoint}?path={urllib.parse.quote(str(path))}"
+    if API_TOKEN and not _is_loopback(request):
+        url += f"&token={urllib.parse.quote(API_TOKEN)}"
+    return (str(request.base_url).rstrip("/") + url) if absolute else url
+
 _local_sockseek = Path(__file__).parent / "sockseek.exe"
 _bin_sockseek = Path(__file__).parent / "bin" / "sockseek.exe"
 SOCKSEEK_BIN = shutil.which("sockseek") or (str(_local_sockseek) if _local_sockseek.exists() else (str(_bin_sockseek) if _bin_sockseek.exists() else "sockseek"))
@@ -256,7 +311,7 @@ def resolve_stream(url: Optional[str] = Query(None), videoId: Optional[str] = Qu
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/download")
-def download_track(req: DownloadRequest):
+def download_track(req: DownloadRequest, request: Request):
     q = (req.query or "").strip()
     direct_link = (req.exact_url or "").strip()
     if not q and not direct_link:
@@ -308,8 +363,8 @@ def download_track(req: DownloadRequest):
                 "file_size_mb": res.get("file_size_mb", 0.0),
                 "duration": res.get("duration", 0.0),
                 "source_used": res.get("source_used", "engine"),
-                "audio_url": f"/api/audio/file?path={final_path}" if final_path else "",
-                "cover_url": f"/api/audio/cover?path={final_path}" if final_path else "",
+                "audio_url": _media_url(request, "file", final_path) if final_path else "",
+                "cover_url": _media_url(request, "cover", final_path) if final_path else "",
                 "lrc_content": lrc_text,
                 "has_lrc": bool(lrc_text),
                 "has_cover": True
@@ -370,7 +425,7 @@ def titanium_verify(req: TitaniumVerifyRequest):
 @app.get("/api/audio/file")
 def get_audio_file(path: str = Query(...)):
     try:
-        p = Path(path).resolve()
+        p = _library_path(path)
         if not p.exists() or not p.is_file():
             raise HTTPException(status_code=404, detail=f"Audio file not found: {path}")
 
@@ -408,7 +463,7 @@ def get_audio_file(path: str = Query(...)):
 @app.get("/api/audio/cover")
 def get_audio_cover(path: str = Query(...)):
     try:
-        p = Path(path).resolve()
+        p = _library_path(path)
         cover_path = None
         if p.is_file():
             cp = p.parent / "cover.jpg"
@@ -462,7 +517,6 @@ def get_library():
 
 @app.get("/api/vault/tracks")
 def get_vault_tracks(request: Request):
-    origin = str(request.base_url).rstrip("/")
     base = Path(DEFAULT_VAULT_DIR)
     if not base.exists():
         return {"tracks": [], "count": 0}
@@ -495,8 +549,8 @@ def get_vault_tracks(request: Request):
                     "path": str(path),
                     "filename": f,
                     "has_lrc": lrc_file.exists(),
-                    "audio_url": f"{origin}/api/audio/file?path={urllib.parse.quote(str(path))}",
-                    "cover_url": f"{origin}/api/audio/cover?path={urllib.parse.quote(str(path))}",
+                    "audio_url": _media_url(request, "file", path, absolute=True),
+                    "cover_url": _media_url(request, "cover", path, absolute=True),
                     "format": path.suffix[1:].upper(),
                     "size_mb": round(path.stat().st_size / (1024 * 1024), 2)
                 })
@@ -504,7 +558,7 @@ def get_vault_tracks(request: Request):
 
 @app.get("/api/vault/lyrics")
 def get_vault_lyrics(path: str = Query(...)):
-    p = Path(path)
+    p = _library_path(path)
     lrc_file = p.with_suffix(".lrc")
     if lrc_file.exists() and lrc_file.is_file():
         try:
