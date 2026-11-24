@@ -61,5 +61,24 @@ dist-releases/
 eval_dataset*.csv
 test_dataset.csv
 train_dataset.csv
-phone_screen*.png
+# Helping files archive (inactive test cases, datasets, experimental scripts)
+helping files/
+"helping files"/
+
+# Binaries and local secrets
+*.apk
+*.exe
+*.dll
+.env
+config.json
+
 Poweramp*.apk
+
+
+web/.env.local
+web/dist/
+web/node_modules/
+.impeccable/
+.hallmark/
+web/.vercel
+web/public/SheroFetch.apk

@@ -1,0 +1,34 @@
+:root {
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px; --space-3xl: 96px; --space-4xl: 144px;
+  --text-xs: 0.8125rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.1875rem; --text-xl: 1.5rem; --text-2xl: 1.875rem; --text-3xl: 2.5rem;
+  --text-display-s: clamp(2.25rem, 3.4vw + 0.75rem, 3.5rem); --text-display: clamp(2.75rem, 4.6vw + 1rem, 5.5rem);
+  --text-section: clamp(2.25rem, 2.6vw + 1rem, 3.75rem); --text-title: clamp(1.25rem, 0.75vw + 0.875rem, 1.625rem); --text-lead: clamp(1.125rem, 0.35vw + 1rem, 1.375rem);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in: cubic-bezier(0.7, 0, 0.84, 0); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 420ms;
+  --container: 1400px; --gutter: 64px; --gap-columns: 32px; --section-gap-s: 120px; --section-gap: 144px; --section-gap-l: 176px;
+  --z-base: 1; --z-raised: 10; --z-dropdown: 100; --z-sticky: 200; --z-sticky-nav: 300; --z-modal: 400; --z-toast: 500; --z-tooltip: 600;
+
+  /* drawing paper and crayon ink */
+  --color-paper: oklch(96.5% 0.018 88); --color-paper-2: oklch(93.5% 0.026 86); --color-paper-3: oklch(90% 0.034 84);
+  --color-ink: oklch(24% 0.025 45); --color-ink-2: oklch(37% 0.03 48); --color-muted: oklch(48% 0.032 58);
+  --color-rule: oklch(83% 0.03 78);
+
+  /* the crayon box: red fetches, yellow fills, blue marks */
+  --color-accent: oklch(51% 0.19 28); --color-accent-ink: oklch(97% 0.014 88); --color-accent-press: oklch(45% 0.18 28);
+  --color-field: oklch(85% 0.15 88); --color-field-ink: oklch(24% 0.025 45);
+  --color-seal: oklch(49% 0.15 255); --color-seal-ink: oklch(97% 0.014 88);
+  --color-focus: oklch(49% 0.19 255);
+  --color-fur: oklch(98.5% 0.006 95); --color-fur-shade: oklch(80% 0.04 250);
+  --color-error: oklch(46% 0.18 27); --color-success: oklch(46% 0.11 150);
+
+  --font-display: "Darumadrop One", "Zen Maru Gothic", ui-rounded, sans-serif;
+  --font-body: "Zen Maru Gothic", ui-rounded, ui-sans-serif, system-ui, sans-serif;
+  --font-outlier: var(--font-body);
+
+  /* hand-cut corners: one shape per level */
+  --radius-control: 14px 18px 12px 20px / 18px 12px 20px 14px;
+  --radius-card: 22px 30px 20px 28px / 28px 20px 30px 22px;
+  --radius-pill: 999px; --rule-hair: 1px; --line-crayon: 3px; --shadow-card: none;
+  --tracking-display: -0.005em;
+}

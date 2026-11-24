@@ -1,0 +1,15 @@
+{
+  "name": "SheroFetch",
+  "short_name": "SheroFetch",
+  "description": "Name a song and Shero fetches it from my PC or phone.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8f3e6",
+  "theme_color": "#f8f3e6",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

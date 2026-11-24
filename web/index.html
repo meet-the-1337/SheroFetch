@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>SheroFetch, the crayon pup who fetches your songs</title>
+  <meta name="description" content="Name a song and Shero fetches it from my PC or phone, tagged with cover art and synced lyrics. Invite only.">
+  <meta name="theme-color" content="#f8f3e6">
+  <meta property="og:title" content="SheroFetch">
+  <meta property="og:description" content="Name a song and Shero fetches it from my PC or phone. Invite only.">
+  <meta property="og:image" content="/og.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Darumadrop+One&family=Zen+Maru+Gothic:wght@400;700&display=swap">
+  <script>document.documentElement.classList.add('js')</script>
+  <link rel="stylesheet" href="/src/styles/landing.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="container nav__row">
+      <a class="wordmark" href="/" aria-label="SheroFetch home">SheroFetch</a>
+      <a class="btn btn--quiet" href="/app">Sign in</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="cover" aria-labelledby="cover-title">
+      <div class="container cover__grid">
+        <div class="cover__text">
+          <h1 id="cover-title">Shero brings back the song you name</h1>
+          <p class="lead">He runs to my PC or phone and returns with lyrics.</p>
+
+          <form class="fetch" action="/app" method="get" role="search" data-fetch>
+            <label class="fetch__label" for="q">Song, artist or playlist link</label>
+            <div class="fetch__row">
+              <input class="field" id="q" name="q" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="kesariya, arijit singh" required aria-describedby="fetch-help" aria-controls="results">
+              <button class="btn btn--fetch" type="submit">Shero, gaana le aa!</button>
+            </div>
+            <p class="fetch__help" id="fetch-help" aria-live="polite"></p>
+            <ol class="results" id="results" hidden></ol>
+          </form>
+
+          <p class="awake" role="status" data-awake>Shero’s machines report in here once the page loads.</p>
+        </div>
+
+        <div class="cover__stage" data-stage>
+          <img class="cover__still" src="/shero-still.png" width="900" height="1000" alt="Shero, a fluffy white pup drawn in crayon, wearing a red collar with a yellow bone tag">
+          <canvas class="cover__canvas" data-hero-canvas aria-label="Shero in 3D. Drag sideways to spin him, tap him to give him a pat." role="img"></canvas>
+          <p class="bubble" data-bubble aria-hidden="true" hidden></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="machines" id="machines" aria-labelledby="machines-title">
+      <div class="container machines__grid">
+        <div class="machines__text">
+          <h2 id="machines-title">He fetches from my desk or my pocket</h2>
+          <p>Whichever machine is awake takes the next song. If both are asleep, Shero waits by the door.</p>
+        </div>
+        <figure class="route" aria-label="Diagram: your song goes into the queue, then to the PC or the phone, whichever is awake">
+          <svg class="route__lines" viewBox="0 0 600 340" aria-hidden="true" focusable="false">
+            <path class="route__path" data-route="pc" d="M70 170 C 200 170, 230 74, 380 74"/>
+            <path class="route__path" data-route="phone" d="M70 170 C 200 170, 230 266, 380 266"/>
+          </svg>
+          <div class="route__node route__node--queue"><b>Queue</b><span data-queue>Songs waiting: checking</span></div>
+          <div class="route__node route__node--pc" data-machine="pc"><b>PC</b><span data-state>Checking</span><span data-seen></span></div>
+          <div class="route__node route__node--phone" data-machine="phone"><b>Phone</b><span data-state>Checking</span><span data-seen></span></div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="formats" id="formats" aria-labelledby="formats-title">
+      <div class="container formats__grid">
+        <div class="formats__text">
+          <h2 id="formats-title">Pick a crayon, get a file</h2>
+          <p>Every song comes back tagged, with cover art and synced lyrics whenever they exist.</p>
+          <fieldset class="crayons">
+            <legend class="visually-hidden">Format</legend>
+            <input type="radio" name="fmt" id="fmt-mp3" value="mp3" checked><label class="crayon crayon--red" for="fmt-mp3">MP3</label>
+            <input type="radio" name="fmt" id="fmt-flac" value="flac"><label class="crayon crayon--blue" for="fmt-flac">FLAC</label>
+            <input type="radio" name="fmt" id="fmt-opus" value="opus"><label class="crayon crayon--yellow" for="fmt-opus">Opus</label>
+          </fieldset>
+        </div>
+        <div class="filecard" data-filecard>
+          <p class="filecard__path"><span>Artist</span><span>Album</span></p>
+          <ul class="filecard__files">
+            <li><b data-ext>Artist - Title.mp3</b><span data-size>about 8 MB for a 4-minute song</span></li>
+            <li><b>Artist - Title.lrc</b><span>synced lyrics</span></li>
+            <li><b>cover.jpg</b><span>album art</span></li>
+          </ul>
+          <p class="filecard__note" data-note>Plays everywhere. Encoded at the best variable bitrate from the source.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="game" id="play" aria-labelledby="play-title">
+      <div class="container game__grid">
+        <div class="game__text">
+          <h2 id="play-title">Throw the bone while he works</h2>
+          <p>Drag the bone and let go. He always brings it back, eventually.</p>
+          <p class="game__score" aria-live="polite" data-score>No throws yet.</p>
+          <button class="btn btn--quiet" type="button" data-throw>Throw the bone</button>
+        </div>
+        <div class="game__stage" data-game-stage>
+          <canvas class="game__canvas" data-game-canvas role="img" aria-label="A paper yard with Shero, his doghouse and a bone you can throw"></canvas>
+          <p class="bubble" data-game-bubble aria-hidden="true" hidden></p>
+          <p class="game__off">The game needs WebGL, which this browser has switched off.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="install" id="install" aria-labelledby="install-title">
+      <div class="container install__grid">
+        <h2 id="install-title">Keep Shero on your home screen</h2>
+        <div class="install__ways">
+          <p>Install the web app from your browser, or get the Android app. Both need an invite code to fetch.</p>
+          <div class="install__actions">
+            <button class="btn btn--quiet" type="button" data-install hidden>Install the web app</button>
+            <a class="btn btn--quiet" href="/SheroFetch.apk" download data-apk>Download the Android app</a>
+          </div>
+          <p class="install__hint" data-install-hint>On a phone, open your browser menu and choose Add to Home screen.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="container foot__row">
+      <a class="wordmark wordmark--small" href="/" aria-label="SheroFetch home">SheroFetch</a>
+      <p>Shero is a fan-made homage to a certain cotton-candy pup from Kasukabe, and is not affiliated with its creators.</p>
+      <p><a href="https://github.com/meet-the-1337/SheroFetch">Source on GitHub</a>, licensed AGPL-3.0</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/landing/main.js"></script>
+</body>
+</html>

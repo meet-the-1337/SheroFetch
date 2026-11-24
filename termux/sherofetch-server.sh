@@ -11,6 +11,8 @@ APP_DIR="${SHEROFETCH_APP_DIR:-$(dirname "$(dirname "$SELF")")}"
 CONF_DIR="$HOME/.config/sherofetch"
 LOG="$HOME/sherofetch_server.log"
 PIDFILE="$HOME/.sherofetch_server.pid"
+WPIDFILE="$HOME/.sherofetch_worker.pid"
+WLOG="$HOME/sherofetch_worker.log"
 TOKEN_FILE="$CONF_DIR/token"
 
 export SHEROFETCH_MUSIC_DIR="${SHEROFETCH_MUSIC_DIR:-/sdcard/Music/SheroFetch}"
@@ -28,18 +30,29 @@ ensure_token() {
 }
 
 running() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+wrunning() { [ -f "$WPIDFILE" ] && kill -0 "$(cat "$WPIDFILE")" 2>/dev/null; }
+start_worker() {
+  if wrunning || [ ! -s "$CONF_DIR/worker.env" ]; then return; fi
+  cd "$APP_DIR" || return
+  : >"$WLOG"
+  setsid nohup "$SELF" __supervise_worker >/dev/null 2>&1 </dev/null &
+  echo $! >"$WPIDFILE"
+  echo "worker started (supervisor pid $!)"
+}
 
 supervise() {
-  # Restart the server whenever it exits; back off if it keeps crashing.
+  # Restart the program whenever it exits; back off if it keeps crashing.
+  # $1 = log file, rest = command
+  local log="$1"; shift
   trap 'kill "$child" 2>/dev/null; exit 0' TERM INT
   local delay=3
   while true; do
     started=$(date +%s)
-    python backend_server.py >>"$LOG" 2>&1 </dev/null &
+    "$@" >>"$log" 2>&1 </dev/null &
     child=$!
     wait "$child"
     code=$?
-    echo "[supervisor] server exited with $code at $(date '+%F %T'); restarting in ${delay}s" >>"$LOG"
+    echo "[supervisor] $1 exited with $code at $(date '+%F %T'); restarting in ${delay}s" >>"$log"
     if [ $(( $(date +%s) - started )) -gt 60 ]; then delay=3; else delay=$(( delay < 60 ? delay * 2 : 60 )); fi
     sleep "$delay"
   done
@@ -47,6 +60,7 @@ supervise() {
 
 case "${1:-start}" in
   start)
+    start_worker
     if running; then echo "already running (pid $(cat "$PIDFILE"))"; exit 0; fi
     ensure_token
     mkdir -p "$SHEROFETCH_MUSIC_DIR"
@@ -60,20 +74,29 @@ case "${1:-start}" in
   __supervise)
     ensure_token
     cd "$APP_DIR" || exit 1
-    supervise
+    supervise "$LOG" python backend_server.py
+    ;;
+  __supervise_worker)
+    cd "$APP_DIR" || exit 1
+    supervise "$WLOG" python -u worker/sherofetch_worker.py
     ;;
   stop)
     if running; then kill "$(cat "$PIDFILE")"; echo stopped; else echo "not running"; fi
     rm -f "$PIDFILE"
     pkill -f "^python backend_server.py" 2>/dev/null
+    if wrunning; then kill "$(cat "$WPIDFILE")"; fi
+    rm -f "$WPIDFILE"
+    pkill -f "^python -u worker/sherofetch_worker.py" 2>/dev/null
     command -v termux-wake-unlock >/dev/null && termux-wake-unlock
     ;;
   restart) "$SELF" stop; sleep 1; "$SELF" start ;;
   status)
+    if wrunning; then echo "worker running (supervisor pid $(cat "$WPIDFILE"))"; else echo "worker not running"; fi
     if running; then echo "running (supervisor pid $(cat "$PIDFILE"))"; else echo "not running"; exit 1; fi
     ;;
   token) ensure_token; echo "$SHEROFETCH_TOKEN" ;;
   logs) tail -n "${2:-50}" "$LOG" ;;
+  wlogs) tail -n "${2:-50}" "$WLOG" ;;
   install-boot)
     mkdir -p "$HOME/.termux/boot"
     cat > "$HOME/.termux/boot/10-sherofetch" <<EOF
