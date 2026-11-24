@@ -9,22 +9,80 @@ const OS = [
 ]
 const guessOs = () => (/android/i.test(navigator.userAgent) ? 'android' : /windows/i.test(navigator.userAgent) ? 'windows' : 'unix')
 
+function MachineList({ title, list, refresh, onRemove }) {
+  return (
+    <>
+      <h2 className="sub sub--small">{title}</h2>
+      <ul className="devlist">
+        {list.map((d) => (
+          <li key={d.id}>
+            <div>
+              <b>{d.name}</b>
+              <span className="muted small">
+                {powerText(d)}.
+                {d.battery?.pct != null ? ` Battery ${d.battery.pct}%${d.battery.charging ? ', charging' : ''}.` : ''}
+                {` ${d.soulseek ? 'Soulseek on' : 'YouTube only'}. ${d.done} fetched since it started${d.failed ? `, ${d.failed} failed` : ''}.`}
+                {d.last_seen && !d.online ? ` Last heard ${new Date(d.last_seen).toLocaleString()}.` : ''}
+              </span>
+            </div>
+            <div className="devlist__acts">
+              <PowerSwitch m={d} onChange={refresh} />
+              {onRemove && <button className="btn btn--ghost" type="button" onClick={() => onRemove(d)}>Remove</button>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
 export function command(os, code) {
   if (os === 'windows') return `powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm ${SITE}/get.ps1))) ${code}"`
   return `curl -fsSL ${SITE}/get.sh | sh -s -- ${code}`
 }
 
-/** My own devices, refreshed every few seconds while `fast`, else every 30 s. */
-export function useMyDevices(fast = false) {
-  const [devices, setDevices] = useState(null)
+/** Machines I may switch (the owner's shared ones, and my own devices), refreshed every few
+ *  seconds while `fast`, else every 30 s. `personal` marks my own devices. */
+export function useMachines(fast = false) {
+  const [list, setList] = useState(null)
+  const [tick, setTick] = useState(0)
   useEffect(() => {
     let live = true
-    const load = () => rpc('my_devices').then((d) => live && setDevices(d || [])).catch(() => live && setDevices((x) => x || []))
+    const load = () => rpc('my_machines').then((d) => live && setList(d || [])).catch(() => live && setList((x) => x || []))
     load()
     const t = setInterval(load, fast ? 5000 : 30000)
     return () => { live = false; clearInterval(t) }
-  }, [fast])
-  return devices
+  }, [fast, tick])
+  return [list, () => setTick((n) => n + 1)]
+}
+
+export function useMyDevices(fast = false) {
+  const [list] = useMachines(fast)
+  return list && list.filter((m) => m.personal)
+}
+
+function powerText(m) {
+  if (m.power === 'off') return m.asleep ? 'Off. Sleeping, so it uses next to no battery or data' : 'Switching off…'
+  if (m.asleep) return 'Waking up… (up to 5 minutes if it is on battery, 1 minute if plugged in)'
+  if (!m.online) return 'On, but not reachable. It may be shut down or without internet'
+  if (m.active) return `On, fetching ${m.active}`
+  return m.accepting ? 'On, waiting for songs' : 'On, paused for low battery'
+}
+
+/** On/off switch for one machine. */
+export function PowerSwitch({ m, onChange }) {
+  const [busy, setBusy] = useState(false)
+  const on = m.power === 'on'
+  async function flip() {
+    setBusy(true)
+    try { await rpc('set_machine_power', { p_id: m.id, p_on: !on }); onChange?.() } catch (err) { alert(String(err?.message || err)) } finally { setBusy(false) }
+  }
+  return (
+    <button className={`switch${on ? ' is-on' : ''}`} type="button" role="switch" aria-checked={on} aria-label={`${m.name} ${on ? 'on' : 'off'}`} disabled={busy} onClick={flip}>
+      <span className="switch__knob" aria-hidden="true" />
+      <span className="switch__label">{on ? 'On' : 'Off'}</span>
+    </button>
+  )
 }
 
 const SEEN_KEY = 'sf-device-choice'
@@ -57,7 +115,9 @@ export function Devices() {
   const [code, setCode] = useState('')
   const [msg, setMsg] = useState('')
   const [copied, setCopied] = useState(false)
-  const devices = useMyDevices(Boolean(code))
+  const [machines, refresh] = useMachines(Boolean(code))
+  const devices = machines && machines.filter((m) => m.personal)
+  const shared = machines ? machines.filter((m) => !m.personal) : []
   const before = useState(() => new Set())[0]
   useEffect(() => { if (devices && !code) devices.forEach((d) => before.add(d.id)) }, [devices, code, before])
   const fresh = code && devices?.find((d) => !before.has(d.id))
@@ -76,29 +136,12 @@ export function Devices() {
 
   return (
     <section className="devices" aria-labelledby="dev-title">
-      <h1 id="dev-title">Fetch on your own device</h1>
+      <h1 id="dev-title">{shared.length ? 'Machines and devices' : 'Fetch on your own device'}</h1>
       <p className="lede">Your PC or phone fetches your songs itself, with no daily limit. It uses your own internet, YouTube, and your own Soulseek account if you add one. Your Soulseek password stays on your device; SheroFetch never sees it.</p>
 
-      {devices?.length > 0 && (
-        <>
-          <h2 className="sub sub--small">Your devices</h2>
-          <ul className="devlist">
-            {devices.map((d) => (
-              <li key={d.id}>
-                <div>
-                  <b>{d.name}</b>
-                  <span className="muted small">
-                    {d.online ? (d.active ? `Fetching ${d.active}` : d.accepting ? 'Online, waiting for songs' : 'Online, paused for low battery') : `Offline${d.last_seen ? ` since ${new Date(d.last_seen).toLocaleString()}` : ''}`}
-                    {`. ${d.soulseek ? 'Soulseek on' : 'YouTube only (no Soulseek account)'}. ${d.done} fetched${d.failed ? `, ${d.failed} failed` : ''}.`}
-                    {d.battery?.pct != null ? ` Battery ${d.battery.pct}%${d.battery.charging ? ', charging' : ''}.` : ''}
-                  </span>
-                </div>
-                <button className="btn btn--ghost" type="button" onClick={() => remove(d)}>Remove</button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      {shared.length > 0 && <MachineList title="SheroFetch machines" list={shared} refresh={refresh} />}
+      {devices?.length > 0 && <MachineList title="Your devices" list={devices} refresh={refresh} onRemove={remove} />}
+      {machines?.length > 0 && <p className="muted small">Switched off, a machine stops fetching, closes its tunnel and lets the phone sleep; it only checks every few minutes whether you switched it back on. Songs it holds cannot be played until it is on again.</p>}
 
       <h2 className="sub sub--small">{devices?.length ? 'Add another device' : 'Set up a device'}</h2>
       <ol className="steps">

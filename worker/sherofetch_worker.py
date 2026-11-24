@@ -50,7 +50,7 @@ def load_config() -> dict:
                 if "=" in line and not line.lstrip().startswith("#"):
                     k, v = line.split("=", 1)
                     conf[k.strip()] = v.strip()
-    conf.update({k: v for k, v in os.environ.items() if k.startswith(("SUPABASE_", "WORKER_", "SHEROFETCH_", "FILE_", "GUEST_", "ALLOWED_", "TUNNEL", "CLOUDFLARED", "CLOUDFLARE_", "LOW_BATTERY", "IDLE_POLL"))})
+    conf.update({k: v for k, v in os.environ.items() if k.startswith(("SUPABASE_", "WORKER_", "SHEROFETCH_", "FILE_", "GUEST_", "ALLOWED_", "TUNNEL", "CLOUDFLARED", "CLOUDFLARE_", "LOW_BATTERY", "IDLE_POLL", "OFF_CHECK"))})
     return conf
 
 
@@ -74,6 +74,8 @@ PYTHON = C.get("WORKER_PYTHON", sys.executable)
 JOB_TIMEOUT = 15 * 60
 LOW_BATTERY = int(C.get("LOW_BATTERY", "20"))
 IDLE_POLL_BATTERY = int(C.get("IDLE_POLL_BATTERY", "30"))
+OFF_CHECK = int(C.get("OFF_CHECK", "60"))  # seconds between "still off?" checks when plugged in
+OFF_CHECK_BATTERY = int(C.get("OFF_CHECK_BATTERY", "300"))  # ... and on battery
 LINK_DAYS = 30
 IS_TERMUX = "com.termux" in os.environ.get("PREFIX", "")
 
@@ -275,6 +277,7 @@ class Tunnel(threading.Thread):
         self.proc: subprocess.Popen | None = None
         self.stopping = False
         self.restarts = 0
+        self.paused = threading.Event()  # set while the machine is switched off
         self.changed: asyncio.Event | None = None  # set by main() on the loop
 
     def _announce(self, url: str | None) -> None:
@@ -290,6 +293,9 @@ class Tunnel(threading.Thread):
     def run(self) -> None:
         backoff = 3
         while not self.stopping:
+            if self.paused.is_set():
+                time.sleep(2)
+                continue
             try:
                 self.proc = subprocess.Popen(self._cmd(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 started = time.time()
@@ -313,7 +319,7 @@ class Tunnel(threading.Thread):
             except Exception as e:  # noqa: BLE001
                 log("tunnel error:", e)
             self._announce(None)
-            if not self.stopping:
+            if not self.stopping and not self.paused.is_set():
                 self.restarts += 1
                 event("warn", "The tunnel dropped and is restarting.")
                 time.sleep(backoff)
@@ -326,6 +332,13 @@ class Tunnel(threading.Thread):
     def stop(self) -> None:
         self.stopping = True
         self.restart()
+
+    def pause(self) -> None:
+        self.paused.set()
+        self.restart()
+
+    def resume(self) -> None:
+        self.paused.clear()
 
 
 TUN = Tunnel() if TUNNEL == "cloudflared" else None
@@ -623,8 +636,11 @@ def accepting() -> bool:
 async def slot(n: int) -> None:
     idle = 0
     while not STOP.is_set():
-        if not accepting():
-            await asyncio.sleep(60)
+        if POWER[0] == "off" or not accepting():
+            try:
+                await asyncio.wait_for(STOP.wait(), timeout=30)
+            except asyncio.TimeoutError:
+                pass
             continue
         try:
             job = await SUPA.rpc("worker_claim", p_id=WORKER_ID)
@@ -650,11 +666,72 @@ async def slot(n: int) -> None:
             pass
 
 
+POWER = ["on"]  # "off" = switched off from the app: no fetching, no tunnel, no wake lock
+
+
+def wake_lock(hold: bool) -> None:
+    """On a phone, hold the CPU awake only while switched on, so Android can deep-sleep when off."""
+    cmd = "termux-wake-lock" if hold else "termux-wake-unlock"
+    if IS_TERMUX and shutil.which(cmd):
+        subprocess.Popen([cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def sleep_check_every() -> int:
+    """How often a switched-off machine asks whether it was switched back on."""
+    return OFF_CHECK_BATTERY if on_battery() else OFF_CHECK
+
+
+async def asleep_beat() -> None:
+    bat = VITALS.battery()
+    await SUPA.rpc("worker_heartbeat", p_id=WORKER_ID, p_name=WORKER_NAME, p_kind=WORKER_KIND, p_public_url=None,
+                   p_version=VERSION, p_capacity=CAPACITY, p_accepting=False,
+                   p_stats={"asleep": True, "power": "off", "battery": bat, "done": COUNTS["done"], "failed": COUNTS["failed"],
+                            "soulseek_account": (HOME / ".config" / "sockseek" / "sockseek.conf").exists(), "active": [{"id": k, **v} for k, v in ACTIVE.items()]},
+                   p_sample=None)
+
+
+def go_to_sleep() -> None:
+    POWER[0] = "off"
+    if TUN:
+        TUN.pause()
+    wake_lock(False)
+    log("switched off from the app: sleeping")
+    event("info", f"{WORKER_NAME} was switched off and is sleeping.")
+
+
+def wake_up() -> None:
+    POWER[0] = "on"
+    wake_lock(True)
+    if TUN:
+        TUN.resume()
+    log("switched on from the app")
+    event("info", f"{WORKER_NAME} was switched on.")
+
+
 async def heartbeat() -> None:
     last_sample = 0.0
     last_requeue = 0.0
     tunnel_fail = 0
     while not STOP.is_set():
+        try:
+            power = await SUPA.rpc("worker_power", p_id=WORKER_ID)
+        except Exception as e:  # noqa: BLE001
+            log("power check failed:", e)
+            power = POWER[0]
+        if power == "off":
+            if POWER[0] != "off":
+                go_to_sleep()
+            try:
+                await asleep_beat()
+            except Exception as e:  # noqa: BLE001
+                log("asleep heartbeat failed:", e)
+            try:
+                await asyncio.wait_for(STOP.wait(), timeout=sleep_check_every())
+            except asyncio.TimeoutError:
+                pass
+            continue
+        if POWER[0] == "off":
+            wake_up()
         try:
             bat = VITALS.battery()
             rx, tx = VITALS.net()
@@ -740,6 +817,7 @@ async def main() -> None:
     released = await SUPA.rpc("worker_release", p_id=WORKER_ID)
     event("info", f"{WORKER_NAME} worker {VERSION} started" + (f", handed back {released} unfinished song(s)" if released else ""))
     log(f"{WORKER_NAME} worker up: capacity {CAPACITY}, files on :{FILE_PORT}, owner songs to {OWNER_DIR}")
+    wake_lock(True)
     tasks = [asyncio.create_task(heartbeat())] + [asyncio.create_task(slot(i)) for i in range(CAPACITY)]
     await STOP.wait()
     log("stopping")
@@ -752,6 +830,7 @@ async def main() -> None:
         t.cancel()
     if TUN:
         TUN.stop()
+    wake_lock(False)
     server.should_exit = True
 
 

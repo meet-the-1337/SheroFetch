@@ -5,9 +5,10 @@ import { crayonize } from '../lib/covers.js'
 import { useSession, useJobs, useMachineLinks, useOnline, fileUrl, machineName, fmtTime, parseLrc, loadLrc, explainFailure } from './data.js'
 import { usePlaylists, PlaylistCard, FailHelp, SavePicker } from './lists.jsx'
 import { Devices, DeviceChoice, deviceChoiceMade, useMyDevices } from './devices.jsx'
+import { THEMES, getTheme, setTheme } from '../lib/theme.js'
 import { isNative, apiUrl, siteUrl, saveToPhone, savedPath, localSrc, phoneSongs, phoneIndex, audioName, readLocalText, outbox, setOutbox, addToOutbox } from '../lib/native.js'
 
-const TABS = [['fetch', 'Fetch'], ['queue', 'Queue'], ['library', 'Library'], ['devices', 'My devices']]
+const TABS = [['fetch', 'Fetch'], ['queue', 'Queue'], ['library', 'Library'], ['devices', 'Devices']]
 
 export function App() {
   const online = useOnline()
@@ -27,6 +28,16 @@ export function App() {
 
 function Center({ children }) {
   return <main className="center"><a className="wordmark" href={siteUrl('/')}>SheroFetch</a>{children}</main>
+}
+
+function LookSwitch() {
+  const [t, setT] = useState(getTheme)
+  useEffect(() => { const on = (e) => setT(e.detail); addEventListener('sf-theme', on); return () => removeEventListener('sf-theme', on) }, [])
+  return (
+    <div className="looks" role="group" aria-label="Site look">
+      {THEMES.map((x) => <button key={x.id} type="button" aria-pressed={t === x.id} onClick={() => setTheme(x.id)}>{x.label}</button>)}
+    </div>
+  )
 }
 
 function SignOut() {
@@ -138,6 +149,7 @@ function Shell({ profile }) {
           ))}
         </nav>
         <div className="who">
+          <LookSwitch />
           {profile.role === 'owner' && <a className="link" href={siteUrl('/control')}>Control Room</a>}
           <span className="muted">{profile.username}</span>
           <SignOut />

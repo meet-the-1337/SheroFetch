@@ -12,9 +12,10 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <script>try{var t=localStorage.getItem('sf-theme');document.documentElement.dataset.theme=t==='stage'?'stage':'crayon';if(t==='stage')document.querySelector('meta[name=theme-color]').content='#121014'}catch(e){document.documentElement.dataset.theme='crayon'}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Darumadrop+One&family=Zen+Maru+Gothic:wght@400;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Darumadrop+One&family=Zen+Maru+Gothic:wght@400;700&family=Unbounded:wght@500;700&family=Manrope:wght@400;600;700&display=swap">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="stylesheet" href="/src/styles/landing.css">
 </head>
@@ -24,7 +25,10 @@
   <header class="nav">
     <div class="container nav__row">
       <a class="wordmark" href="/" aria-label="SheroFetch home">SheroFetch</a>
-      <a class="btn btn--quiet" href="/app">Sign in</a>
+      <div class="nav__end">
+        <div class="looks" role="group" aria-label="Site look" data-looks></div>
+        <a class="btn btn--quiet" href="/app">Sign in</a>
+      </div>
     </div>
   </header>
 
@@ -50,9 +54,12 @@
 
         <div class="cover__stage" data-stage>
           <img class="cover__still" src="/shero-still.png" width="900" height="1000" alt="Shero, a fluffy white pup drawn in crayon, wearing a red collar with a yellow bone tag">
-          <canvas class="cover__canvas" data-hero-canvas aria-label="Shero and his boy in their yard, in 3D. Tap Shero to pat him, double-tap him for his cotton-candy trick, tap the house to go inside." role="img"></canvas>
+          <canvas class="cover__canvas" data-hero-canvas aria-label="Shero and Shinchan at the Nohara residence in 3D. Tap Shero for tricks, double-tap for Watagashi, tap Shinchan for the Buri-Buri boogie, or start the House Story Tour." role="img"></canvas>
           <p class="bubble" data-bubble aria-hidden="true" hidden></p>
-          <button class="btn btn--quiet stage__go" type="button" data-house hidden>Go inside the house</button>
+          <div class="stage__controls">
+            <button class="btn btn--quiet stage__go" type="button" data-house hidden>Go inside the house</button>
+            <button class="btn btn--quiet stage__tour" type="button" data-story hidden>🎬 House Story Tour</button>
+          </div>
         </div>
       </div>
     </section>
@@ -122,7 +129,7 @@
           <p>Install the web app from your browser, or get the Android app. Both need an invite code to fetch.</p>
           <div class="install__actions">
             <button class="btn btn--quiet" type="button" data-install hidden>Install the web app</button>
-            <a class="btn btn--quiet" href="/SheroFetch.apk" download data-apk>Download the Android app</a>
+            <a class="btn btn--quiet" href="https://github.com/meet-the-1337/SheroFetch/releases/latest/download/SheroFetch.apk" data-apk>Download the Android app</a>
           </div>
           <p class="install__hint" data-install-hint>On a phone, open your browser menu and choose Add to Home screen.</p>
         </div>

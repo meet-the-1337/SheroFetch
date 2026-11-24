@@ -1,9 +1,10 @@
 import * as THREE from 'three'
 import { createStage } from '../three/stage.js'
-import { createShero } from '../three/shero.js'
+import { createShero, makeBone } from '../three/shero.js'
 import { createYard, createRoom } from '../three/yard.js'
 import { createKid } from '../three/kid.js'
 import { createBubble, pickLine } from './bubble.js'
+import { createStoryTour } from '../three/story.js'
 
 const PET = ['Hehe, aur karo!', 'Wahi wala spot!', 'Pyaar se, pyaar se.']
 const SPIN = ['Chakkar aa gaya…', 'Phir se!', 'Duniya ghoom rahi hai.']
@@ -12,20 +13,25 @@ const TV = [
   ['Tonight', 'Gaana raat'],
   ['Weather', 'Dhoop, phir gaane'],
   ['News', 'Kutta gaana laaya'],
+  ['Action Kamen', 'Action Beam!', true],
 ]
+const HERO_LINES = ['WAHAHAHA! Action Beam!', 'Action Kamen Z!', 'Buri Buri Zaemon ko hara diya! Hahaha!']
+const KID_TEASE = ['Mummy ko mat batana!', 'Shero ko ghumane le jaana bhool gaya...', 'Hehehe! Dekho mera Buri-Buri boogie!', 'Action Kamen ki nayi movie aa rahi hai!']
+const DANCE_LINES = ['Buri Buri Boogie! (ケツだけ星人)', 'Sharmao mat, naacho naacho!', 'Dekho mera Buri-Buri step!']
+const BONE_LINES = ['Laaya! Phir se phenko!', 'Mil gaya! Aur?', 'Haddi meri hai, ab.']
 const ROOM_X = 80
 const VIEWS = {
   yard: { pos: new THREE.Vector3(1.2, 2.9, 15), look: new THREE.Vector3(0, 2.7, -3) },
-  // Pulled back like a dollhouse with its front wall off, so the whole room is in view.
   room: { pos: new THREE.Vector3(ROOM_X + 1.0, 4.2, 14.5), look: new THREE.Vector3(ROOM_X + 0.7, 1.9, -0.6) },
+  overview: { pos: new THREE.Vector3(3.5, 7.5, 22), look: new THREE.Vector3(0.5, 2.8, -4) },
 }
 const YARD_SPOT = new THREE.Vector3(1.5, 0, 2.6)
 const KID_YARD = new THREE.Vector3(3.3, 0, 1.4)
 const KID_ROOM = new THREE.Vector3(ROOM_X - 1.6, 0, 2.0)
-const KID_LINES = ['Shero, gaana le aa!', 'Mera kutta sabse smart hai.', 'Homework baad mein, gaana pehle!', 'Hehe, ek aur gaana?']
+const KID_LINES = ['Shero, gaana le aa!', 'Mera kutta sabse smart hai.', 'Homework baad mein, gaana pehle!', 'Hehe, ek aur gaana?', ...KID_TEASE]
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
-export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace } = {}) {
+export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, storyBtn, onPlace } = {}) {
   let mode = 'idle', place = 'yard', runResolve = null, speed = 0, greeted = false, tvAt = 0
   let tween = null, yaw = 0, yawVel = 0
   // 1.5x is plenty for a crayon drawing and halves the GPU work of a 2x screen.
@@ -54,6 +60,18 @@ export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace
   shadow.rotation.x = -Math.PI / 2
   scene.add(shadow)
   const bubble = createBubble(bubbleEl, canvas, camera, pup.headPivot)
+
+  // Shero walking somewhere on his own (to a thrown bone, to his bowl, and back).
+  let walk = null
+  const walkTo = (to, pace = 5) => new Promise((resolve) => {
+    if (stage.still) { pup.root.position.set(to.x, 0, to.z); resolve(); return }
+    pup.setRunning(true)
+    walk = { to: new THREE.Vector3(to.x, 0, to.z), pace, resolve }
+  })
+  const bone = makeBone(kit, kit.fur({ fluff: 0 }), 0.7)
+  bone.visible = false
+  scene.add(bone)
+  let flight = null
 
   const look = new THREE.Vector3()
   const setView = (v) => { camera.position.copy(v.pos); look.copy(v.look); camera.lookAt(look) }
@@ -85,6 +103,25 @@ export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace
       const edge = (place === 'room' ? ROOM_X : 0) + 7.5
       if (pup.root.position.x > edge) { mode = 'gone'; runResolve?.(); runResolve = null }
     }
+    if (walk) {
+      const p = pup.root.position
+      const dx = walk.to.x - p.x, dz = walk.to.z - p.z
+      const d = Math.hypot(dx, dz)
+      const want = Math.atan2(dx, dz)
+      let turn = want - pup.root.rotation.y
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn))
+      pup.root.rotation.y += turn * (1 - Math.exp(-dt * 10))
+      if (d < 0.12) { const w = walk; walk = null; pup.setRunning(false); w.resolve() }
+      else { const step = Math.min(d, walk.pace * dt); p.x += (dx / d) * step; p.z += (dz / d) * step }
+    }
+    if (flight) {
+      flight.t = Math.min(1, flight.t + dt / flight.dur)
+      const k = flight.t
+      bone.position.lerpVectors(flight.from, flight.to, k)
+      bone.position.y += Math.sin(k * Math.PI) * flight.arc
+      bone.rotation.z += dt * 14
+      if (k >= 1) { const f = flight; flight = null; bone.position.y = 0.12; bone.rotation.set(Math.PI / 2, 0, Math.random() * 3); f.done() }
+    }
     shadow.position.set(pup.root.position.x, pup.root.position.y + 0.004, pup.root.position.z)
     kidShadow.position.set(kid.root.position.x, 0.004, kid.root.position.z)
     kid.update(dt)
@@ -98,11 +135,45 @@ export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace
     setTimeout(() => { fn(); stage.poke(0.3); canvas.classList.remove('is-cut'); setTimeout(resolve, 240) }, 240)
   })
   const syncButton = () => {
-    if (!houseBtn) return
-    houseBtn.textContent = place === 'yard' ? 'Go inside the house' : 'Back to the yard'
-    houseBtn.disabled = mode !== 'idle'
+    if (houseBtn) {
+      houseBtn.textContent = place === 'yard' ? 'Go inside the house' : 'Back to the yard'
+      houseBtn.disabled = mode !== 'idle'
+    }
+    if (storyBtn) {
+      storyBtn.disabled = mode !== 'idle' && !story.isRunning()
+    }
     onPlace?.(place)
   }
+
+  const story = createStoryTour({
+    stage,
+    yard,
+    room,
+    pup,
+    kid,
+    bubble,
+    setPlace: async (p) => {
+      if (p === 'room' && place !== 'room') await goInside()
+      else if (p === 'yard' && place !== 'yard') await goOutside()
+    },
+    setView,
+    ROOM_X,
+    VIEWS,
+  })
+
+  storyBtn?.addEventListener('click', async () => {
+    if (story.isRunning()) {
+      story.stop()
+      storyBtn.textContent = '🎬 House Story Tour'
+      syncButton()
+    } else {
+      storyBtn.textContent = '⏹ Stop Tour'
+      syncButton()
+      await story.start()
+      storyBtn.textContent = '🎬 House Story Tour'
+      syncButton()
+    }
+  })
 
   async function goInside() {
     if (mode !== 'idle' || place !== 'yard') return
@@ -158,6 +229,59 @@ export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace
     syncButton()
     bubble.say('Bahar ki hawa!', 1600)
   }
+  // Tap the yard: the bone flies there, Shero fetches it in his mouth and brings it back.
+  async function tossBone(point) {
+    if (mode !== 'idle' || place !== 'yard') return
+    mode = 'play'
+    syncButton()
+    const to = new THREE.Vector3(Math.max(-6, Math.min(6.5, point.x)), 0.12, Math.max(-3, Math.min(5, point.z)))
+    const home = pup.root.position.clone()
+    bone.visible = true
+    scene.add(bone)
+    pup.perk()
+    await new Promise((done) => {
+      if (stage.still) { bone.position.copy(to); done(); return }
+      flight = { t: 0, dur: 0.75, from: new THREE.Vector3(2.6, 1.6, 4.4), to, arc: 2.2, done }
+    })
+    bubble.say('Haddi!', 900)
+    await walkTo(to.clone().sub(new THREE.Vector3(0, 0, 0.6)), 6.5)
+    pup.socket.add(bone)
+    bone.position.set(0, 0, 0)
+    bone.rotation.set(0, Math.PI / 2, 0)
+    await walkTo(home, 5)
+    pup.root.rotation.y = -0.32
+    scene.add(bone)
+    bone.position.set(home.x - 0.9, 0.12, home.z + 0.5)
+    bone.rotation.set(Math.PI / 2, 0, 0.4)
+    pup.pet()
+    bubble.say(pickLine(BONE_LINES), 2200)
+    stage.poke(1.4)
+    mode = 'idle'
+    syncButton()
+  }
+
+  // Tap the bowl: dinner time.
+  async function dinner() {
+    if (mode !== 'idle') return
+    mode = 'play'
+    syncButton()
+    const home = pup.root.position.clone()
+    const b = yard.bowlWorld()
+    bubble.say('Khaana!', 900)
+    await walkTo(new THREE.Vector3(b.x + 0.1, 0, b.z + 1.0), 5.5)
+    pup.root.rotation.y = Math.PI
+    pup.eat(2.4)
+    bubble.say('Crunch crunch crunch…', 2200)
+    stage.poke(2.6)
+    await new Promise((r) => setTimeout(r, stage.still ? 0 : 2500))
+    await walkTo(home, 4.5)
+    pup.root.rotation.y = -0.32
+    pup.pet()
+    bubble.say('Pet bhar gaya. Ab gaana?', 2000)
+    mode = 'idle'
+    syncButton()
+  }
+
   // A link straight into the living room: /#inside
   if (location.hash === '#inside') setTimeout(goInside, 400)
   houseBtn?.addEventListener('click', () => (place === 'yard' ? goInside() : goOutside()))
@@ -212,14 +336,26 @@ export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace
     else if (down.onPup) { pup.pet(); bubble.say(pickLine(PET)) }
     else {
       aim(e)
-      if (hits(kid.root)) { kid.wave(); bubble.say(pickLine(KID_LINES), 2200) }
+      if (hits(kid.root)) { kid.wave(); bubble.say(pickLine(KID_LINES), 2400) }
+      else if (place === 'yard' && hits(yard.bowl)) dinner()
+      else if (place === 'yard' && yard.waterDish && hits(yard.waterDish)) { pup.sniff(); bubble.say('Slurp slurp... Thanda paani!', 2000) }
+      else if (place === 'yard' && yard.plate && hits(yard.plate)) bubble.say('Nohara (野原) family residence! Kasukabe, Saitama.', 2600)
+      else if (place === 'yard' && yard.car && hits(yard.car)) bubble.say('Hiroshi papa ki gaadi! 32 saal ka loan chal raha hai!', 2800)
       else if (place === 'yard' && (hits(yard.door) || hits(yard.house))) goInside()
       else if (place === 'yard' && hits(yard.doghouse)) { pup.perk(); bubble.say('Ye mera ghar hai. Chhota, par mera.', 2400) }
+      else if (place === 'yard' && hits(yard.trike)) bubble.say('Shinchan ki laal tricycle! Fast drive!', 2500)
+      else if (place === 'yard' && hits(yard.mailbox)) { pup.perk(); bubble.say('Chitthi aayi? Shayad gaana aaya!', 2400) }
+      else if (place === 'yard') {
+        const g = ray.intersectObject(yard.ground)[0]
+        if (g) tossBone(g.point)
+      }
       else if (place === 'room' && hits(room.tv)) {
         tvAt = (tvAt + 1) % TV.length
         room.setScreen(...TV[tvAt])
-        bubble.say('Channel badlo, gaana wahi!', 1800)
-      } else if (place === 'room' && hits(room.snack)) { pup.pet(); pup.pet(); bubble.say('Snack! Mera favourite.', 2200) }
+        if (TV[tvAt][2]) { kid.actionPose(); bubble.say(pickLine(HERO_LINES), 2800) } else bubble.say('Channel badlo, gaana wahi!', 1800)
+      } else if (place === 'room' && room.comic && hits(room.comic)) { kid.actionPose(); bubble.say('Action Kamen comic volume 15! Action Beam!', 2800) }
+      else if (place === 'room' && room.phone && hits(room.phone)) bubble.say('Trrring! "Moshi moshi, Nohara family residence desu!"', 2600)
+      else if (place === 'room' && (hits(room.snack) || hits(room.pot))) { pup.beg(); bubble.say('Chocobi! Ya fir garam chai?', 2600) }
       else if (place === 'room' && hits(room.crayons)) bubble.say('Crayon se hi toh bana hoon!', 2200)
       else if (place === 'room' && hits(room.sofa)) bubble.say('Sofa pe allowed nahi hoon. Shh.', 2200)
     }
@@ -233,7 +369,7 @@ export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace
   canvas.addEventListener('dblclick', (e) => {
     if (mode !== 'idle') return
     if (!hitsPup(e)) {
-      if (hits(kid.root)) { kid.dance(); pup.pet(); bubble.say('Naacho naacho!', 2000); stage.poke(2.6) }
+      if (hits(kid.root)) { kid.dance(); pup.pet(); bubble.say('Buri Buri Boogie! (ケツだけ星人) Naacho naacho!', 2600); stage.poke(2.8) }
       return
     }
     pup.setCurl(true)
@@ -253,7 +389,7 @@ export function mountHero(canvas, bubbleEl, { onDrawn, onLost, houseBtn, onPlace
     },
     picked(title) { room.setScreen('Up next', title || 'Gaana') },
     needInvite() { pup.sniff(); bubble.say('Pehle invite dikhao!', 3200); stage.poke(1.5) },
-    treat() { pup.pet(); pup.pet(); bubble.say('Chocobi! Mera favourite.', 3000); stage.poke(1.5) },
+    treat() { pup.beg(3); bubble.say('Snack? Main baith ke maangta hoon!', 3000); stage.poke(3) },
     // Shero runs off screen to fetch. Resolves once he is gone (at once under reduced motion).
     runOff() {
       if (stage.still || mode !== 'idle') return Promise.resolve()

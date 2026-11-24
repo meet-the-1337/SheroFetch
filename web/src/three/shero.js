@@ -117,9 +117,15 @@ export function createShero(kit, palette) {
   collar.rotation.x = Math.PI / 2 - 0.5
   rig.add(collar)
   const tag = makeBone(kit, yellow, 0.24)
-  tag.position.set(0, 0.8, 0.76)
-  tag.rotation.x = -0.35
+  tag.position.set(0.2, 0.82, 0.74)
+  tag.rotation.set(-0.35, 0, 0.3)
   rig.add(tag)
+  // A little round bell beside the tag, with its slot drawn on.
+  const bell = kit.drawn(sphere(0.085, 20, 14), yellow, { thick: 0.016 })
+  bell.position.set(-0.12, 0.78, 0.78)
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.014, 0.02), ink)
+  slot.position.set(-0.12, 0.75, 0.86)
+  rig.add(bell, slot)
 
   const socket = new THREE.Group()
   socket.position.set(0, 0.06, 0.88)
@@ -129,6 +135,7 @@ export function createShero(kit, palette) {
     t: 0, lookX: 0, lookY: 0, tx: 0, ty: 0,
     happy: 0, perk: 0, sniff: 0, run: 0, runTarget: 0, phase: 0,
     blinkAt: 1.8, blink: 0, hop: 0, spinVel: 0, curl: 0, curlTarget: 0, sit: 0,
+    beg: 0, begUntil: 0, eat: 0, eatUntil: 0,
   }
 
   function update(dt) {
@@ -141,11 +148,14 @@ export function createShero(kit, palette) {
     st.sniff = Math.max(0, st.sniff - dt * 0.9)
     st.run = damp(st.run, st.runTarget, 7, dt)
     st.curl = damp(st.curl, st.curlTarget, 5, dt)
+    st.beg = damp(st.beg, t < st.begUntil ? 1 : 0, 6, dt)
+    st.eat = damp(st.eat, t < st.eatUntil ? 1 : 0, 8, dt)
 
     st.lookX = damp(st.lookX, st.tx, 6, dt)
     st.lookY = damp(st.lookY, st.ty, 6, dt)
     headPivot.rotation.y = st.lookX * 0.65
     headPivot.rotation.x = -st.lookY * 0.32 + st.sniff * 0.42 + Math.sin(t * 28) * 0.035 * st.sniff
+      + st.eat * (0.75 + Math.sin(t * 13) * 0.18) - st.beg * 0.25
     headPivot.rotation.z = st.lookX * -0.12 + Math.sin(t * 1.3) * 0.03 * (1 - st.run)
 
     const squint = st.happy > 0.3 ? 0.32 : 1
@@ -174,14 +184,33 @@ export function createShero(kit, palette) {
 
     st.hop = Math.max(0, st.hop - dt * 2.6)
     const hopY = Math.sin(Math.min(1, 1 - st.hop) * Math.PI) * 0.35 * (st.hop > 0 ? 1 : 0)
-    rig.position.y = Math.abs(Math.sin(st.phase)) * 0.13 * st.run + hopY
-    rig.rotation.x = st.run * 0.12
+    rig.position.y = Math.abs(Math.sin(st.phase)) * 0.13 * st.run + hopY + st.beg * 0.18
+    rig.rotation.x = st.run * 0.12 - st.beg * 0.5
+    // Begging: sat back on his hind legs, front paws paddling up and down.
+    if (st.beg > 0.02) {
+      const paddle = Math.sin(t * 9) * 0.45 * st.beg
+      legs[0].rotation.x = -1.3 * st.beg + paddle
+      legs[1].rotation.x = -1.3 * st.beg - paddle
+      legs[2].rotation.x = legs[3].rotation.x = 1.0 * st.beg
+    }
 
     // Curl: the cotton-ball trick, a ball of fluff that rolls.
+    // Head, ears and legs tuck in so he becomes one round puff.
     const c = st.curl
-    rig.scale.set(1 + c * 0.08, 1 - c * 0.42, 1 - c * 0.22)
+    rig.scale.set(1 + c * 0.04, 1 - c * 0.38, 1 - c * 0.34)
     legs.forEach((l) => { l.visible = c < 0.5 })
-    headPivot.position.y = 1.02 - c * 0.5
+    ears.forEach((p) => { p.visible = c < 0.6 })
+    tailPivot.visible = c < 0.6
+    collar.visible = tag.visible = bell.visible = slot.visible = c < 0.6
+    headPivot.position.y = 1.02 - c * 0.62
+    headPivot.position.z = 0.34 - c * 0.3
+
+    st.scratch = damp(st.scratch || 0, t < (st.scratchUntil || 0) ? 1 : 0, 10, dt)
+    if (st.scratch > 0.05) {
+      headPivot.rotation.z = 0.35 * st.scratch
+      legs[3].rotation.x = -1.2 * st.scratch + Math.sin(t * 22) * 0.3 * st.scratch
+      legs[3].rotation.z = 0.5 * st.scratch
+    }
 
     root.rotation.y += st.spinVel * dt
     st.spinVel *= Math.exp(-dt * 2.6)
@@ -196,5 +225,8 @@ export function createShero(kit, palette) {
     spin(v) { st.spinVel += v },
     setRunning(on) { st.runTarget = on ? 1 : 0 },
     setCurl(on) { st.curlTarget = on ? 1 : 0 },
+    beg(seconds = 2.6) { st.begUntil = st.t + seconds; st.happy = Math.max(st.happy, 0.8) },
+    eat(seconds = 2.2) { st.eatUntil = st.t + seconds },
+    scratch(seconds = 2.0) { st.scratchUntil = st.t + seconds },
   }
 }

@@ -56,7 +56,11 @@ public class SheroSavePlugin extends Plugin {
                 out = target(rel);
                 File parent = out.getParentFile();
                 if (parent != null && !parent.exists() && !parent.mkdirs()) throw new Exception("Could not make " + parent);
-                part = new File(out.getPath() + ".part");
+                // Keep the audio extension on the temp file: without all-files access, Android only lets
+                // an app create audio files in Music/, so "song.flac.part" would be refused.
+                String op = out.getPath();
+                int dot = op.lastIndexOf('.');
+                part = new File(dot > op.lastIndexOf('/') ? op.substring(0, dot) + ".part" + op.substring(dot) : op + ".part");
                 HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                 c.setConnectTimeout(20000);
                 c.setReadTimeout(60000);
@@ -149,6 +153,7 @@ public class SheroSavePlugin extends Plugin {
 
     private static boolean isAudio(String name) {
         String n = name.toLowerCase();
+        if (n.contains(".part.")) return false; // a download still in progress
         for (String ext : AUDIO) if (n.endsWith(ext)) return true;
         return false;
     }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, rpc } from '../lib/supabase.js'
 import { useSession } from '../app/data.js'
+import { PowerSwitch } from '../app/devices.jsx'
 
 const ONLINE_MS = 75000
 const bytes = (n) => (n == null ? 'n/a' : n < 1024 ? `${Math.round(n)} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`)
@@ -160,7 +161,8 @@ function Machine({ w, online, samples, running }) {
   const traffic = samples.reduce((a, x) => a + ((x.rx_bps || 0) + (x.tx_bps || 0)) * 60, 0)
   return (
     <article className={`machine ${online ? 'is-ok' : 'is-down'}`} aria-label={w.name}>
-      <header><h2>{w.name}</h2><strong>{online ? (running.length ? `fetching ${running.length}` : 'hosting, idle') : 'asleep'}</strong></header>
+      <header><h2>{w.name}</h2><strong>{w.power === 'off' ? (s.asleep ? 'switched off, sleeping' : 'switching off…') : online ? (running.length ? `fetching ${running.length}` : 'hosting, idle') : 'asleep'}</strong>
+        <PowerSwitch m={w} /></header>
       <p className="muted small">{online ? `${s.os || ''}, up ${dur(s.uptime_s)}, worker ${w.version}` : `Last heard from ${ago(w.last_seen)}`}</p>
       {running.map((j) => <p key={j.id} className="note">{j.title || j.query}: {j.stage} ({Math.round(j.progress * 100)}%)</p>)}
       <dl className="kv">

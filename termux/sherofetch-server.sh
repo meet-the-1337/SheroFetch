@@ -64,7 +64,7 @@ case "${1:-start}" in
     if running; then echo "already running (pid $(cat "$PIDFILE"))"; exit 0; fi
     ensure_token
     mkdir -p "$SHEROFETCH_MUSIC_DIR"
-    command -v termux-wake-lock >/dev/null && termux-wake-lock
+    # the worker takes the wake lock itself, and only while switched on
     cd "$APP_DIR" || exit 1
     : >"$LOG"
     setsid nohup "$SELF" __supervise >/dev/null 2>&1 </dev/null &
@@ -102,7 +102,7 @@ case "${1:-start}" in
     cat > "$HOME/.termux/boot/10-sherofetch" <<EOF
 #!/data/data/com.termux/files/usr/bin/sh
 # Started by Termux:Boot after the phone boots.
-termux-wake-lock
+# the worker holds the wake lock only while switched on
 pgrep -x sshd >/dev/null || sshd
 "$SELF" start
 EOF

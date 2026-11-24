@@ -186,3 +186,21 @@ progress::-moz-progress-bar { background: var(--color-accent); }
 .cmd:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
 .ok { font-weight: 700; color: var(--color-ink); }
 @media (prefers-reduced-motion: reduce) { .choice__opt { transition: none; } }
+
+/* on/off switch for machines */
+.devlist__acts { display: flex; align-items: center; gap: var(--space-xs); }
+.switch { display: inline-flex; align-items: center; gap: var(--space-xs); min-height: 40px; padding: 0 var(--space-sm) 0 var(--space-2xs); border: var(--line-crayon) solid var(--color-ink); border-radius: var(--radius-pill); background: var(--color-paper-3); color: var(--color-ink); font: 700 var(--text-sm)/1 var(--font-body); cursor: pointer; transition: background-color var(--dur-short) var(--ease-out); }
+.switch__knob { width: 28px; height: 28px; border: var(--line-crayon) solid var(--color-ink); border-radius: 50%; background: var(--color-paper); transition: transform var(--dur-short) var(--ease-out); }
+.switch.is-on { background: var(--color-accent); color: var(--color-accent-ink); }
+.switch.is-on .switch__knob { transform: translateX(2px); }
+.switch:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.switch:disabled { opacity: 0.6; cursor: progress; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch__knob { transition: none; } }
+
+/* look switch */
+.looks { display: inline-flex; gap: var(--space-3xs); padding: var(--space-3xs); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-pill); }
+.looks button { min-height: 32px; padding: 0 var(--space-sm); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--color-ink-2); font: 700 var(--text-xs)/1 var(--font-body); cursor: pointer; }
+.looks button:hover { color: var(--color-ink); background: var(--color-paper-2); }
+.looks button[aria-pressed="true"] { background: var(--color-ink); color: var(--color-paper); }
+.looks button:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+[data-theme="stage"] h1 { font-weight: 700; letter-spacing: var(--tracking-display); }

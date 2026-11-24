@@ -1,5 +1,6 @@
 import { SUPABASE_URL, SUPABASE_KEY, hasBackend, hasSession, FORMATS, savedFormat, saveFormat, PLAYLIST_RE } from '../lib/config.js'
 import { crayonize } from '../lib/covers.js'
+import { getTheme, mountThemeSwitch } from '../lib/theme.js'
 
 const $ = (s, el = document) => el.querySelector(s)
 const html = document.documentElement
@@ -9,20 +10,39 @@ const webgl = (() => {
 })()
 if (webgl) html.classList.add('webgl')
 
-/* ---------- the hero pup ---------- */
+/* ---------- the site look, and the hero that goes with it ---------- */
+const theme = getTheme()
+mountThemeSwitch($('[data-looks]'))
+// Each look has its own 3D scene; switching reloads so the old scene's GPU memory is freed.
+addEventListener('sf-theme', (e) => { if (e.detail !== theme) location.reload() })
+
 let hero = null
+const heroCanvas = $('[data-hero-canvas]')
+if (theme === 'stage') heroCanvas.setAttribute('aria-label', 'A turntable under a spotlight, with level meters moving to the beat. Drag the record to scratch it, tap it to lift or drop the needle.')
 if (webgl) {
-  import('./hero.js').then(({ mountHero }) => {
-    const houseBtn = $('[data-house]')
-    hero = mountHero($('[data-hero-canvas]'), $('[data-bubble]'), {
-      houseBtn,
-      onDrawn: (ok) => {
-        if (ok) { html.classList.add('hero-drawn'); houseBtn.hidden = false } else { hero = null; html.classList.remove('webgl') }
-      },
-      onLost: (isLost) => { html.classList.toggle('hero-drawn', !isLost); houseBtn.hidden = isLost },
-    })
-    if (!hero) html.classList.remove('webgl')
-  })
+  const houseBtn = $('[data-house]')
+  const storyBtn = $('[data-story]')
+  const done = {
+    onDrawn: (ok) => {
+      if (ok) {
+        html.classList.add('hero-drawn')
+        houseBtn.hidden = theme === 'stage'
+        if (storyBtn) storyBtn.hidden = theme === 'stage'
+      } else {
+        hero = null
+        html.classList.remove('webgl')
+      }
+    },
+    onLost: (isLost) => {
+      html.classList.toggle('hero-drawn', !isLost)
+      houseBtn.hidden = isLost || theme === 'stage'
+      if (storyBtn) storyBtn.hidden = isLost || theme === 'stage'
+    },
+  }
+  const load = theme === 'stage'
+    ? import('./turntable.js').then(({ mountTurntable }) => mountTurntable(heroCanvas, done))
+    : import('./hero.js').then(({ mountHero }) => mountHero(heroCanvas, $('[data-bubble]'), { houseBtn, storyBtn, ...done }))
+  load.then((h) => { hero = h; if (!hero) html.classList.remove('webgl') })
 }
 
 /* ---------- live machines ---------- */
@@ -193,7 +213,9 @@ document.querySelectorAll('input[name="fmt"]').forEach((r) => r.addEventListener
 
 /* ---------- the bone game, mounted when it nears the screen ---------- */
 const gameStage = $('[data-game-stage]')
-if (webgl) {
+if (theme === 'stage') {
+  // the Stage look has no yard, so no bone game
+} else if (webgl) {
   const io = new IntersectionObserver(([e]) => {
     if (!e.isIntersecting) return
     io.disconnect()
@@ -222,11 +244,6 @@ installBtn.addEventListener('click', async () => {
   deferred = null
   installBtn.hidden = true
 })
-fetch('/SheroFetch.apk', { method: 'HEAD' }).then((r) => {
-  const a = $('[data-apk]')
-  const n = Number(r.headers.get('content-length') || 0)
-  if (!r.ok || (r.headers.get('content-type') || '').includes('text/html')) { a.hidden = true; return }
-  if (n) a.textContent = `Download the Android app, ${(n / 1048576).toFixed(1)} MB`
-}).catch(() => {})
+// The Android app is published as a signed GitHub release; the link always points at the latest one.
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) navigator.serviceWorker.register('/sw.js').catch(() => {})

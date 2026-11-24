@@ -79,6 +79,8 @@ export const artProxy = (url) => `/api/art?u=${encodeURIComponent(url)}`
 // Returns a data URL of the crayon version, or the plain proxied art when WebGL is unavailable.
 export function crayonize(url, seed = 1) {
   if (!url) return Promise.resolve('')
+  // The Stage look shows album art as it is.
+  if (document.documentElement.dataset.theme === 'stage') return Promise.resolve(url)
   if (cache.has(url)) return cache.get(url)
   const job = chain
     .then(async () => {

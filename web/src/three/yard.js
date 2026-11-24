@@ -41,6 +41,66 @@ function gable(w, h, d) {
   return geo
 }
 
+function noharaPlate(palette) {
+  const c = document.createElement('canvas')
+  c.width = 160
+  c.height = 420
+  const g = c.getContext('2d')
+  const rgb = (v) => `rgb(${v.map((x) => Math.round(x * 255)).join(',')})`
+  // Clean wooden plaque
+  g.fillStyle = rgb(palette.paper)
+  g.fillRect(0, 0, 160, 420)
+  g.strokeStyle = rgb(palette.ink)
+  g.lineWidth = 10
+  g.strokeRect(6, 6, 148, 408)
+  // Kanji: 野原 (Nohara)
+  g.fillStyle = rgb(palette.ink)
+  g.font = 'bold 110px "Zen Maru Gothic", sans-serif'
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  g.fillText('野', 80, 130)
+  g.fillText('原', 80, 275)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return { mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.78), new THREE.MeshBasicMaterial({ map: tex })), tex }
+}
+
+function chocobiTexture(palette) {
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 256
+  const g = c.getContext('2d')
+  const rgb = (v) => `rgb(${v.map((x) => Math.round(x * 255)).join(',')})`
+  g.fillStyle = rgb(mix(palette.blue, palette.yellow, 0.58))
+  g.fillRect(0, 0, 512, 256)
+  // Waniyama-san (Pink Dinosaur) face
+  g.fillStyle = rgb(mix(palette.red, palette.paper, 0.42))
+  g.beginPath()
+  g.arc(256, 115, 78, 0, Math.PI * 2)
+  g.fill()
+  // Sharp white teeth
+  g.fillStyle = rgb(palette.paper)
+  for (let x = 205; x <= 295; x += 18) {
+    g.beginPath()
+    g.moveTo(x, 125); g.lineTo(x + 9, 148); g.lineTo(x + 18, 125); g.fill()
+  }
+  // Eyes
+  g.fillStyle = rgb(palette.ink)
+  g.beginPath(); g.arc(232, 100, 14, 0, Math.PI * 2); g.fill()
+  g.beginPath(); g.arc(280, 100, 14, 0, Math.PI * 2); g.fill()
+  g.fillStyle = rgb(palette.paper)
+  g.beginPath(); g.arc(235, 96, 5, 0, Math.PI * 2); g.fill()
+  g.beginPath(); g.arc(283, 96, 5, 0, Math.PI * 2); g.fill()
+  // Japanese text: チョコビ
+  g.fillStyle = rgb(palette.yellow)
+  g.font = 'bold 44px "Darumadrop One", sans-serif'
+  g.textAlign = 'center'
+  g.fillText('チョコビ', 256, 225)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
 // The living room of the family house: low table, sofa, a TV that shows what Shero is
 // fetching, a window onto the evening, and a box of crayons left on the floor.
 export function createRoom(kit, palette) {
@@ -64,17 +124,96 @@ export function createRoom(kit, palette) {
   add(kit.drawn(box(0.2, 9, 22), wallMat, { thick: 0.04 }), 6, 4.5, 6.5)
   // Skirting board where the walls meet the floor.
   add(new THREE.Mesh(box(12, 0.18, 0.06), kit.ink(mix(palette.red, palette.ink, 0.35))), 0, 0.09, -4.38)
-  // Tatami lines on the floor.
-  for (const x of [-3, 0, 3]) add(new THREE.Mesh(box(0.04, 0.02, 22), kit.ink(mix(palette.ink, palette.paper, 0.55))), x, 0.01, 6.5)
+  // Six tatami mats, each edged on its long sides with dark green cloth tape.
+  const matMat = kit.fill(mix(mix(palette.paper, palette.yellow, 0.55), palette.blue, 0.12))
+  const tape = kit.ink(mix(mix(palette.blue, palette.yellow, 0.5), palette.ink, 0.55))
+  for (const x0 of [-5.4, 0]) for (const z0 of [-4.3, -1.6, 1.1]) {
+    add(kit.drawn(box(5.36, 0.06, 2.66), matMat, { thick: 0.012 }), x0 + 2.7, 0.03, z0 + 1.35)
+    for (const dz of [0.06, 2.6]) add(new THREE.Mesh(box(5.36, 0.07, 0.11), tape), x0 + 2.7, 0.035, z0 + dz)
+  }
+
+  // Sliding closet doors on the back wall, papered with a soft cloud pattern.
+  const cc = document.createElement('canvas')
+  cc.width = 256
+  cc.height = 256
+  const cg = cc.getContext('2d')
+  const rgbc = (v, a = 1) => `rgba(${v.map((x) => Math.round(x * 255)).join(',')},${a})`
+  cg.fillStyle = rgbc(mix(palette.paper, palette.yellow, 0.12))
+  cg.fillRect(0, 0, 256, 256)
+  cg.strokeStyle = rgbc(mix(palette.blue, palette.paper, 0.45), 0.6)
+  cg.lineWidth = 5
+  for (const [cx, cy] of [[60, 70], [190, 150], [80, 210]]) {
+    cg.beginPath()
+    for (let k = 0; k < 4; k++) cg.arc(cx + k * 22, cy - (k % 2) * 10, 16, Math.PI, 0)
+    cg.stroke()
+  }
+  const cloudTex = new THREE.CanvasTexture(cc)
+  cloudTex.colorSpace = THREE.SRGBColorSpace
+  disposables.push(cloudTex)
+  for (const [i, x] of [-4.6, -2.8].entries()) {
+    const panel = new THREE.Mesh(box(1.85, 3.2, 0.06), new THREE.MeshBasicMaterial({ map: cloudTex }))
+    disposables.push(panel.material)
+    panel.position.set(x, 1.65, -4.34 + i * 0.05)
+    root.add(panel)
+    for (const y of [0.04, 3.26]) add(new THREE.Mesh(box(1.85, 0.08, 0.1), ink), x, y, -4.3 + i * 0.05)
+    add(new THREE.Mesh(box(0.06, 3.2, 0.1), ink), x - 0.92, 1.65, -4.3 + i * 0.05)
+    add(new THREE.Mesh(new THREE.CircleGeometry(0.08, 16), ink), x + (i ? -0.7 : 0.7), 1.6, -4.26 + i * 0.05)
+  }
   // Window on the back wall, sky behind it.
   add(kit.drawn(box(2.8, 1.8, 0.1), kit.fill(mix(palette.blue, palette.paper, 0.55)), { thick: 0.04 }), 2.4, 2.4, -4.38)
   add(new THREE.Mesh(box(0.06, 1.8, 0.14), ink), 2.4, 2.4, -4.35)
 
-  // Low round table with a snack box on it.
-  add(kit.drawn(new THREE.CylinderGeometry(1.2, 1.2, 0.14, 32), wood, { thick: 0.035 }), -0.4, 0.62, 0.6)
+  // Low round Chabudai table with Chocobi snack box and green teapot.
+  const chabudai = add(kit.drawn(new THREE.CylinderGeometry(1.2, 1.2, 0.14, 32), wood, { thick: 0.035 }), -0.4, 0.62, 0.6)
   for (const [x, z] of [[-0.8, 0.2], [0, 0.2], [-0.8, 1.0], [0, 1.0]]) add(kit.drawn(box(0.1, 0.55, 0.1), wood, { thick: 0.02 }), -0.4 + x * 0.9 + 0.36, 0.28, z)
-  const snack = add(kit.drawn(box(0.5, 0.36, 0.3), yellow, { thick: 0.025 }), -0.6, 0.87, 0.5)
+
+  // Two square Zabuton tatami cushions
+  const zabuton1 = add(kit.drawn(box(0.9, 0.08, 0.9), kit.fill(mix(palette.blue, palette.red, 0.45)), { thick: 0.02 }), -0.4, 0.04, 1.6)
+  const zabuton2 = add(kit.drawn(box(0.9, 0.08, 0.9), yellow, { thick: 0.02 }), -1.5, 0.04, 0.6)
+  zabuton1.rotation.y = 0.15
+  zabuton2.rotation.y = -0.2
+
+  // The Iconic Six-sided Chocobi snack box with Waniyama-san dinosaur face
+  const chocTex = chocobiTexture(palette)
+  disposables.push(chocTex)
+  const chocGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.44, 6)
+  const chocMat = new THREE.MeshBasicMaterial({ map: chocTex })
+  disposables.push(chocGeo, chocMat)
+  const snack = add(new THREE.Mesh(chocGeo, chocMat), -0.75, 0.91, 0.45)
   snack.rotation.y = 0.4
+  const snackLid = add(kit.drawn(new THREE.CylinderGeometry(0.27, 0.27, 0.05, 6), yellow, { thick: 0.015 }), -0.75, 1.15, 0.45)
+  snackLid.rotation.y = 0.4
+
+  // Green Japanese teapot (kyusu)
+  const green = kit.fill(mix(palette.blue, palette.yellow, 0.55))
+  const pot = new THREE.Group()
+  pot.add(kit.drawn(new THREE.SphereGeometry(0.24, 20, 14).scale(1, 0.82, 1), green, { thick: 0.02 }))
+  const lid = kit.drawn(new THREE.CylinderGeometry(0.1, 0.13, 0.07, 14), green, { thick: 0.012 })
+  lid.position.y = 0.2
+  const spout = kit.drawn(new THREE.CylinderGeometry(0.035, 0.06, 0.28, 8), green, { thick: 0.012 })
+  spout.position.set(0.25, 0.04, 0)
+  spout.rotation.z = -0.9
+  pot.add(lid, spout)
+  pot.position.set(0.05, 0.9, 0.85)
+  root.add(pot)
+
+  // Action Kamen comic book lying on the tatami floor
+  const comic = new THREE.Group()
+  comic.add(kit.drawn(box(0.55, 0.03, 0.75), red, { thick: 0.012 }))
+  const comicCover = new THREE.Mesh(box(0.52, 0.035, 0.72), kit.fill(mix(palette.yellow, palette.paper, 0.5)))
+  comic.add(comicCover)
+  comic.position.set(-1.4, 0.02, 2.1)
+  comic.rotation.y = 0.45
+  root.add(comic)
+
+  // Side stand with retro rotary telephone
+  const phoneStand = add(kit.drawn(box(0.9, 0.8, 0.7), wood, { thick: 0.03 }), -5.2, 0.4, -3.6)
+  const phoneBase = kit.drawn(box(0.36, 0.16, 0.36), green, { thick: 0.015 })
+  phoneBase.position.set(-5.2, 0.88, -3.6)
+  const dial = new THREE.Mesh(new THREE.CircleGeometry(0.08, 16), kit.fill(palette.paper))
+  dial.position.set(-5.2, 0.97, -3.55)
+  dial.rotation.x = -Math.PI / 2 + 0.3
+  root.add(phoneBase, dial)
 
   // Sofa along the left wall.
   const sofa = new THREE.Group()
@@ -89,27 +228,75 @@ export function createRoom(kit, palette) {
 
   // TV on a stand in the right corner, its screen a canvas we can write on.
   add(kit.drawn(box(1.8, 0.7, 0.8), wood, { thick: 0.035 }), 3.4, 0.35, -2.6)
-  add(kit.drawn(box(1.9, 1.25, 0.5), kit.fill(mix(palette.ink, palette.paper, 0.25)), { thick: 0.04 }), 3.4, 1.35, -2.7)
+  // A wood-cased tube TV with a knob panel and rabbit-ear antennas.
+  add(kit.drawn(box(2.3, 1.5, 1.1), wood, { thick: 0.045 }), 3.55, 1.45, -2.85)
+  add(kit.drawn(box(0.42, 1.2, 0.05), kit.fill(mix(palette.ink, palette.paper, 0.3)), { thick: 0.015 }), 4.45, 1.45, -2.28)
+  for (const y of [1.75, 1.3]) {
+    const knob = add(kit.drawn(new THREE.CylinderGeometry(0.1, 0.1, 0.08, 16).rotateX(Math.PI / 2), kit.fill(palette.paper), { thick: 0.012 }), 4.45, y, -2.23)
+    knob.rotation.z = y
+  }
+  for (const s of [-1, 1]) {
+    const ant = add(kit.drawn(new THREE.CylinderGeometry(0.018, 0.018, 1.3, 6), kit.fill(palette.paper), { thick: 0.008 }), 3.55 + s * 0.35, 2.75, -2.9)
+    ant.rotation.z = -s * 0.5
+  }
+  add(kit.drawn(new THREE.SphereGeometry(0.16, 14, 10).scale(1.4, 0.6, 1), kit.fill(mix(palette.ink, palette.paper, 0.3)), { thick: 0.012 }), 3.55, 2.25, -2.9)
   const sc = document.createElement('canvas')
   sc.width = 512
   sc.height = 320
   const tex = new THREE.CanvasTexture(sc)
   tex.colorSpace = THREE.SRGBColorSpace
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), new THREE.MeshBasicMaterial({ map: tex }))
-  screen.position.set(3.4, 1.35, -2.44)
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.55, 1.15), new THREE.MeshBasicMaterial({ map: tex }))
+  screen.position.set(3.32, 1.45, -2.28)
   root.add(screen)
   disposables.push(tex, screen.material, screen.geometry)
   const rgb = (v) => `rgb(${v.map((x) => Math.round(x * 255)).join(',')})`
-  const setScreen = (top, line) => {
+  const setScreen = (top, line, show) => {
     const g = sc.getContext('2d')
-    g.fillStyle = rgb(palette.blue)
+    g.fillStyle = rgb(show ? palette.red : palette.blue)
     g.fillRect(0, 0, 512, 320)
+    if (show) {
+      // Action Kamen (Action Mask) striking his victory pose with Action Beam!
+      g.strokeStyle = rgb(palette.yellow)
+      g.lineWidth = 12
+      for (let k = 0; k < 12; k++) {
+        g.beginPath()
+        g.moveTo(256, 160)
+        g.lineTo(256 + Math.cos(k * 0.55) * 450, 160 + Math.sin(k * 0.55) * 450)
+        g.stroke()
+      }
+      // Superhero green/blue suit
+      g.fillStyle = rgb(mix(palette.blue, palette.yellow, 0.6))
+      g.fillRect(224, 125, 64, 110)
+      // Yellow belt
+      g.fillStyle = rgb(palette.yellow)
+      g.fillRect(220, 185, 72, 18)
+      // Masked head
+      g.beginPath(); g.arc(256, 95, 38, 0, Math.PI * 2); g.fill()
+      // Yellow eye visors
+      g.fillStyle = rgb(palette.yellow)
+      g.fillRect(224, 85, 26, 14)
+      g.fillRect(262, 85, 26, 14)
+      // Red crest
+      g.fillStyle = rgb(palette.red)
+      g.beginPath(); g.moveTo(256, 50); g.lineTo(246, 75); g.lineTo(266, 75); g.fill()
+      // Arm shooting Action Beam
+      g.fillStyle = rgb(mix(palette.blue, palette.yellow, 0.6))
+      g.beginPath(); g.moveTo(280, 135); g.lineTo(390, 60); g.lineTo(405, 78); g.lineTo(290, 160); g.fill()
+      // Comic text: ACTION BEAM!
+      g.fillStyle = rgb(palette.yellow)
+      g.font = 'bold 36px "Darumadrop One", sans-serif'
+      g.textAlign = 'center'
+      g.fillText('アクションビーム！', 256, 280)
+    }
+    // a faint scanline wash, like an old tube set
+    g.fillStyle = 'rgba(0,0,0,0.07)'
+    for (let y = 0; y < 320; y += 6) g.fillRect(0, y, 512, 2)
     g.fillStyle = rgb(palette.paper)
     g.textAlign = 'center'
     g.font = '40px "Zen Maru Gothic", sans-serif'
-    g.fillText(top, 256, 120)
+    g.fillText(top, 256, show ? 44 : 120)
     g.font = '64px "Darumadrop One", "Zen Maru Gothic", sans-serif'
-    g.fillText(line.length > 14 ? line.slice(0, 13) + '…' : line, 256, 210)
+    g.fillText(line.length > 14 ? line.slice(0, 13) + '…' : line, 256, show ? 296 : 210)
     tex.needsUpdate = true
   }
   setScreen('Channel Shero', 'Kya sunoge?')
@@ -130,7 +317,9 @@ export function createRoom(kit, palette) {
   add(kit.drawn(new THREE.CylinderGeometry(0.8, 0.85, 0.18, 24), blue, { thick: 0.03 }), 1.9, 0.09, 0.4)
 
   return {
-    root, tv: screen, sofa, snack, crayons, setScreen,
+    root, tv: screen, sofa, snack, pot, comic, phone: phoneBase, crayons, setScreen,
+    tableWorld: () => chabudai.getWorldPosition(new THREE.Vector3()),
+    tvWorld: () => screen.getWorldPosition(new THREE.Vector3()),
     spot: new THREE.Vector3(1.9, 0.18, 0.4),
     dispose() { disposables.forEach((d) => d.dispose()) },
   }
@@ -174,13 +363,40 @@ export function createYard(kit, palette) {
     bar.position.set(x, y, z + 0.01)
     house.add(m, bar)
   }
-  win(1.8, 1.1, -1.9, 1.6, 2.22)
+  // Sliding glass doors onto a low wooden veranda along the front of the house.
+  const glass = kit.fill(mix(palette.blue, palette.paper, 0.6))
+  for (const [i, x] of [-2.6, -1.4, -0.2].entries()) {
+    const pane = kit.drawn(box(1.15, 1.9, 0.06), glass, { thick: 0.03 })
+    pane.position.set(x, 1.38, 2.21 + (i % 2) * 0.05)
+    const frame = new THREE.Mesh(box(0.06, 1.9, 0.1), ink)
+    frame.position.set(x + 0.56, 1.38, 2.24)
+    const shine = new THREE.Mesh(box(0.05, 0.9, 0.02), kit.ink(palette.paper))
+    shine.position.set(x - 0.3, 1.6, 2.27)
+    shine.rotation.z = 0.35
+    house.add(pane, frame, shine)
+  }
+  const deck = kit.drawn(box(5.2, 0.22, 1.25), wood, { thick: 0.035 })
+  deck.position.set(-1.0, 0.36, 2.85)
+  house.add(deck)
+  for (let x = -3.4; x <= 1.41; x += 0.4) {
+    const plank = new THREE.Mesh(box(0.025, 0.02, 1.2), kit.ink(mix(palette.ink, palette.paper, 0.5)))
+    plank.position.set(x, 0.48, 2.85)
+    house.add(plank)
+  }
+  for (const x of [-3.45, -1.0, 1.45]) {
+    const leg = kit.drawn(box(0.16, 0.36, 0.16), wood, { thick: 0.02 })
+    leg.position.set(x, 0.12, 3.35)
+    house.add(leg)
+  }
+  const step = kit.drawn(box(0.9, 0.16, 0.45), kit.fill(mix(palette.paper, palette.muted, 0.4)), { thick: 0.025 })
+  step.position.set(-1.6, 0.08, 3.7)
+  house.add(step)
   win(1.5, 1.0, -1.6, 4.25, 1.92)
   win(1.2, 1.0, 0.9, 4.25, 1.92)
   const door = kit.drawn(box(1.0, 1.9, 0.1), wood, { thick: 0.035 })
   door.position.set(2.2, 0.95, 2.23)
   house.add(door)
-  // Balcony rail and a laundry pole with a towel and a small red shirt.
+  // Balcony rail and a laundry pole with Hiroshi's shirt, Misae's apron, and Shinchan's shirt.
   const rail = kit.drawn(box(5.4, 0.1, 0.1), white, { thick: 0.03 })
   rail.position.set(-0.6, 3.75, 2.5)
   house.add(rail)
@@ -191,11 +407,16 @@ export function createYard(kit, palette) {
   }
   const pole = kit.drawn(new THREE.CylinderGeometry(0.035, 0.035, 5.2, 8).rotateZ(Math.PI / 2), white, { thick: 0.02 })
   pole.position.set(-0.6, 4.9, 2.4)
-  const towel = kit.drawn(box(0.9, 0.8, 0.03), kit.fill(mix(palette.blue, palette.paper, 0.5)), { thick: 0.025 })
-  towel.position.set(-2.2, 4.5, 2.4)
-  const shirt = kit.drawn(box(0.6, 0.55, 0.03), red, { thick: 0.025 })
-  shirt.position.set(-1.1, 4.62, 2.4)
-  house.add(pole, towel, shirt)
+  // Hiroshi's white business shirt
+  const hShirt = kit.drawn(box(0.9, 0.85, 0.03), white, { thick: 0.025 })
+  hShirt.position.set(-2.2, 4.45, 2.4)
+  // Misae's pink apron
+  const apron = kit.drawn(box(0.7, 0.8, 0.03), kit.fill(mix(palette.red, palette.paper, 0.4)), { thick: 0.025 })
+  apron.position.set(-1.0, 4.48, 2.4)
+  // Shinchan's little red shirt
+  const sShirt = kit.drawn(box(0.5, 0.45, 0.03), red, { thick: 0.02 })
+  sShirt.position.set(0.1, 4.65, 2.4)
+  house.add(pole, hShirt, apron, sShirt)
   house.position.set(0.8, 0, -9)
   house.rotation.y = -0.12
   root.add(house)
@@ -221,8 +442,104 @@ export function createYard(kit, palette) {
     post.position.set(x, 0.85, 0)
     wall.add(post)
   }
+  // Authentic "野原" (Nohara) wooden nameplate on the gate pillar
+  const plate = noharaPlate(palette)
+  plate.mesh.position.set(1.42, 1.35, 0.22)
+  wall.add(plate.mesh)
+  disposables.push(plate.tex, plate.mesh.material, plate.mesh.geometry)
+
+  // A green metal gate in the gap, slightly open, and a mailbox with a slot on the post.
+  const green = kit.fill(mix(palette.blue, palette.yellow, 0.55))
+  const gate = new THREE.Group()
+  const gw = 2.4
+  for (const y of [0.18, 1.25]) {
+    const bar = kit.drawn(box(gw, 0.08, 0.08), green, { thick: 0.02 })
+    bar.position.set(gw / 2, y, 0)
+    gate.add(bar)
+  }
+  for (let x = 0.05; x <= gw; x += 0.22) {
+    const rod = kit.drawn(box(0.05, 1.1, 0.05), green, { thick: 0.014 })
+    rod.position.set(x, 0.72, 0)
+    gate.add(rod)
+  }
+  gate.position.set(-1.0, 0, 0.05)
+  gate.rotation.y = -0.35
+  wall.add(gate)
+  const mailbox = new THREE.Group()
+  mailbox.add(kit.drawn(box(0.5, 0.42, 0.3), red, { thick: 0.025 }))
+  const mslot = new THREE.Mesh(box(0.3, 0.04, 0.02), ink)
+  mslot.position.set(0, 0.08, 0.16)
+  mailbox.add(mslot)
+  mailbox.position.set(1.4, 1.45, 0.3)
+  wall.add(mailbox)
   wall.position.z = -3.6
   root.add(wall)
+
+  // A small red tricycle left by the wall.
+  const trike = new THREE.Group()
+  const tyre = kit.fill(palette.ink)
+  const wheel = (r, x, z) => {
+    const w = kit.drawn(new THREE.TorusGeometry(r, r * 0.22, 8, 24), tyre, { thick: 0.015 })
+    w.rotation.y = Math.PI / 2
+    w.position.set(x, r, z)
+    trike.add(w)
+  }
+  wheel(0.36, 0, 0.55)
+  wheel(0.22, -0.32, -0.35)
+  wheel(0.22, 0.32, -0.35)
+  const tube = kit.drawn(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8).rotateX(Math.PI / 2 - 0.35), red, { thick: 0.015 })
+  tube.position.set(0, 0.48, 0.12)
+  const axle = kit.drawn(box(0.72, 0.06, 0.06), red, { thick: 0.012 })
+  axle.position.set(0, 0.24, -0.35)
+  const seat = kit.drawn(box(0.3, 0.08, 0.34), kit.fill(palette.ink), { thick: 0.015 })
+  seat.position.set(0, 0.62, -0.12)
+  const bars = kit.drawn(box(0.62, 0.05, 0.05), red, { thick: 0.012 })
+  bars.position.set(0, 0.92, 0.5)
+  const stem = kit.drawn(box(0.05, 0.5, 0.05), red, { thick: 0.012 })
+  stem.position.set(0, 0.68, 0.55)
+  trike.add(tube, axle, seat, bars, stem)
+  trike.position.set(2.5, 0, -2.75)
+  trike.rotation.y = -1.2
+  root.add(trike)
+
+  // Hiroshi's Carport on the right lane with small green family sedan
+  const carport = new THREE.Group()
+  carport.position.set(7.5, 0, -5.8)
+  for (const [cx, cz] of [[-1.5, -2.2], [1.5, -2.2], [-1.5, 2.2], [1.5, 2.2]]) {
+    const cp = kit.drawn(new THREE.CylinderGeometry(0.06, 0.06, 2.8, 8), wallGrey, { thick: 0.015 })
+    cp.position.set(cx, 1.4, cz)
+    carport.add(cp)
+  }
+  const cRoof = kit.drawn(box(3.4, 0.1, 4.8), kit.fill(mix(palette.blue, palette.paper, 0.6)), { thick: 0.02 })
+  cRoof.position.set(0, 2.85, 0)
+  cRoof.rotation.z = -0.06
+  carport.add(cRoof)
+
+  // Hiroshi's classic small green family hatchback car
+  const car = new THREE.Group()
+  const carGreen = kit.fill(mix(palette.blue, palette.yellow, 0.62))
+  car.add(kit.drawn(box(2.0, 0.8, 3.8), carGreen, { thick: 0.03 }))
+  const cabin = kit.drawn(box(1.8, 0.7, 2.2), carGreen, { thick: 0.025 })
+  cabin.position.set(0, 0.72, -0.2)
+  car.add(cabin)
+  const carGlass = kit.fill(mix(palette.blue, palette.paper, 0.45))
+  const fGlass = new THREE.Mesh(box(1.7, 0.55, 0.04), carGlass)
+  fGlass.position.set(0, 0.7, 0.92)
+  fGlass.rotation.x = -0.32
+  car.add(fGlass)
+  for (const [wx, wz] of [[-0.95, -1.1], [0.95, -1.1], [-0.95, 1.1], [0.95, 1.1]]) {
+    const wh = kit.drawn(new THREE.CylinderGeometry(0.35, 0.35, 0.22, 16).rotateZ(Math.PI / 2), kit.fill(palette.ink), { thick: 0.015 })
+    wh.position.set(wx, -0.15, wz)
+    car.add(wh)
+  }
+  for (const hx of [-0.68, 0.68]) {
+    const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12), yellow)
+    lamp.position.set(hx, 0.12, 1.91)
+    car.add(lamp)
+  }
+  car.position.set(0, 0.52, 0)
+  carport.add(car)
+  root.add(carport)
 
   // Telephone pole with sagging wires running out of frame.
   const tp = new THREE.Group()
@@ -257,9 +574,23 @@ export function createYard(kit, palette) {
   board.mesh.position.set(0, 1.86, 1.08)
   board.mesh.rotation.x = -0.12
   disposables.push(board.tex, board.mesh.material, board.mesh.geometry)
-  const bowl = kit.drawn(new THREE.CylinderGeometry(0.3, 0.22, 0.16, 20), yellow, { thick: 0.025 })
+
+  // Blue food bowl with kibble
+  const bowl = kit.drawn(new THREE.CylinderGeometry(0.34, 0.24, 0.18, 20), kit.fill(palette.blue), { thick: 0.025 })
+  const kibble = kit.drawn(new THREE.CylinderGeometry(0.28, 0.28, 0.04, 16), kit.fill(mix(palette.red, palette.yellow, 0.5)), { thick: 0.01 })
+  kibble.position.y = 0.08
+  bowl.add(kibble)
   bowl.position.set(1.35, 0.08, 1.2)
-  dog.add(dw, droof, hole, holeLow, board.mesh, bowl)
+
+  // Blue water dish with clear water
+  const waterDish = kit.drawn(new THREE.CylinderGeometry(0.3, 0.22, 0.16, 20), kit.fill(palette.blue), { thick: 0.02 })
+  const waterMesh = new THREE.Mesh(new THREE.CircleGeometry(0.24, 16), kit.fill(mix(palette.blue, palette.paper, 0.6)))
+  waterMesh.rotation.x = -Math.PI / 2
+  waterMesh.position.y = 0.06
+  waterDish.add(waterMesh)
+  waterDish.position.set(1.4, 0.08, 0.4)
+
+  dog.add(dw, droof, hole, holeLow, board.mesh, bowl, waterDish)
   dog.position.set(-1.9, 0, -0.3)
   dog.rotation.y = 0.42
   root.add(dog)
@@ -285,7 +616,21 @@ export function createYard(kit, palette) {
 
   return {
     root,
+    ground: yardGround,
+    bowl,
+    bowlWorld: () => bowl.getWorldPosition(new THREE.Vector3()),
+    waterDish,
+    plate: plate.mesh,
+    trike,
+    car,
+    carWorld: () => car.getWorldPosition(new THREE.Vector3()),
+    gate,
+    gateWorld: () => gate.getWorldPosition(new THREE.Vector3()),
+    mailbox,
     doghouse: dog,
+    doghouseWorld: () => dog.getWorldPosition(new THREE.Vector3()),
+    deck,
+    verandaWorld: () => deck.getWorldPosition(new THREE.Vector3()),
     house,
     door,
     doorWorld: () => door.getWorldPosition(new THREE.Vector3()),

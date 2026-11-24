@@ -33,3 +33,25 @@
   --radius-pill: 999px; --rule-hair: 1px; --line-crayon: 3px; --shadow-card: none;
   --tracking-display: -0.005em;
 }
+
+/* Stage: a dark listening room. Warm black, cream type, one amber spotlight, teal for live things. */
+:root[data-theme="stage"] {
+  color-scheme: dark;
+  --color-paper: oklch(16% 0.012 40); --color-paper-2: oklch(20.5% 0.014 40); --color-paper-3: oklch(26% 0.016 40);
+  --color-ink: oklch(95% 0.018 80); --color-ink-2: oklch(80% 0.02 75); --color-muted: oklch(66% 0.02 70);
+  --color-rule: oklch(32% 0.016 50);
+  --color-accent: oklch(76% 0.16 62); --color-accent-ink: oklch(18% 0.02 50); --color-accent-press: oklch(70% 0.16 58);
+  --color-field: oklch(24% 0.03 60); --color-field-ink: oklch(95% 0.018 80);
+  --color-seal: oklch(74% 0.11 190); --color-seal-ink: oklch(18% 0.02 200);
+  --color-focus: oklch(80% 0.13 190);
+  --color-sky-top: oklch(18% 0.02 40); --color-sky-low: oklch(14% 0.012 40);
+  --color-fur: oklch(21% 0.014 40); --color-fur-shade: oklch(32% 0.02 50);
+  --color-error: oklch(70% 0.16 25); --color-success: oklch(74% 0.13 150);
+
+  --font-display: "Unbounded", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-control: 10px; --radius-card: 18px;
+  --line-crayon: 1.5px;
+  --tracking-display: -0.025em;
+}

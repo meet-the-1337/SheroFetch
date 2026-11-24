@@ -69,8 +69,9 @@
 .cover__still, .cover__canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .cover__still { object-fit: contain; }
 .cover__canvas { touch-action: pan-y; cursor: grab; transition: opacity var(--dur-short) var(--ease-out); }
-.cover__canvas.is-cut { opacity: 0; }
-.stage__go { position: absolute; right: var(--space-md); bottom: var(--space-md); z-index: var(--z-raised); background: var(--color-fur); }
+.stage__controls { position: absolute; right: var(--space-md); bottom: var(--space-md); z-index: var(--z-raised); display: flex; gap: var(--space-xs); flex-wrap: wrap; justify-content: flex-end; }
+.stage__go, .stage__tour { background: var(--color-fur); box-shadow: 2px 2px 0 var(--color-ink); }
+.stage__tour { border: var(--line-crayon) solid var(--color-ink); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .cover__canvas { transition: none; } }
 .cover__canvas:active { cursor: grabbing; }
 html:not(.webgl) .cover__canvas { display: none; }
@@ -169,3 +170,28 @@ html:not(.webgl) .game__canvas { display: none; }
   .btn:hover, .btn--fetch:hover, .crayon:hover { transform: none; }
   .crayons input:checked + .crayon { transform: none; }
 }
+
+/* the look switch in the nav */
+.nav__end { display: flex; align-items: center; gap: var(--space-sm); }
+.looks { display: inline-flex; gap: var(--space-3xs); padding: var(--space-3xs); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-pill); }
+.looks button { min-height: 36px; padding: 0 var(--space-md); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--color-ink-2); font: 700 var(--text-sm)/1 var(--font-body); cursor: pointer; transition: background-color var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out); }
+.looks button:hover { color: var(--color-ink); background: var(--color-paper-2); }
+.looks button[aria-pressed="true"] { background: var(--color-ink); color: var(--color-paper); }
+.looks button:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+@media (max-width: 40rem) { .looks button { padding: 0 var(--space-sm); } }
+
+/* Stage: a dark listening room around the 3D turntable */
+[data-theme="stage"] .cover h1, [data-theme="stage"] h2 { font-weight: 700; line-height: 0.98; }
+[data-theme="stage"] .cover h1 { font-size: clamp(2.5rem, 4.2vw + 0.75rem, 5rem); max-width: 12ch; }
+[data-theme="stage"] .wordmark { font-weight: 700; letter-spacing: -0.03em; }
+[data-theme="stage"] .cover__stage { border: 0; border-radius: var(--radius-card); background: radial-gradient(120% 90% at 55% 20%, oklch(30% 0.06 60), var(--color-paper) 62%); }
+[data-theme="stage"] .cover__still { opacity: 0; }
+[data-theme="stage"] .cover__canvas { cursor: default; }
+[data-theme="stage"] .game { display: none; }
+[data-theme="stage"] .formats, [data-theme="stage"] .install { background: var(--color-paper-2); }
+[data-theme="stage"] .route__node, [data-theme="stage"] .filecard { background: var(--color-paper-2); }
+[data-theme="stage"] .route__node--queue { background: var(--color-field); }
+[data-theme="stage"] .crayon { font-family: var(--font-display); font-weight: 700; font-size: var(--text-lg); }
+[data-theme="stage"] .btn--fetch { box-shadow: 0 0 0 0 transparent; }
+[data-theme="stage"] .btn--fetch:hover { box-shadow: 0 8px 32px -8px color-mix(in oklab, var(--color-accent) 70%, transparent); }
+@media (prefers-reduced-motion: reduce) { .looks button { transition: none; } }
