@@ -9,6 +9,7 @@ import java.io.File;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(SheroSavePlugin.class);
         super.onCreate(savedInstanceState);
         scanMusicFolders();
     }

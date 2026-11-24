@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
 
@@ -31,13 +31,34 @@ function localApi() {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), localApi()],
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
-  build: {
-    target: 'es2022',
-    rollupOptions: {
-      input: { main: page('./index.html'), app: page('./app.html'), control: page('./control.html') },
+// device.json: the public project address and publishable key, read by the device installer so a
+// person's own PC or phone can join without typing them. Both are already public in the page.
+function deviceJson(env) {
+  return {
+    name: 'sherofetch-device-json',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'device.json', source: JSON.stringify({ url: env.VITE_SUPABASE_URL, key: env.VITE_SUPABASE_KEY }) })
     },
-  },
+  }
+}
+
+// `vite build --mode native` builds only the app page into the Android project, where it is served
+// from the phone itself, so the APK opens with no signal. build:native then renames it index.html.
+export default defineConfig(({ mode }) => {
+  const native = mode === 'native'
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+  return {
+    plugins: [react(), localApi(), ...(native ? [] : [deviceJson(env)])],
+    // the site's public folder holds the APK itself and landing art; the app needs none of it
+    publicDir: native ? false : 'public',
+    server: { host: '127.0.0.1', port: 5173, strictPort: true },
+    build: {
+      target: 'es2022',
+      outDir: native ? page('../tauri-music-downloader/dist') : 'dist',
+      emptyOutDir: true,
+      rollupOptions: {
+        input: native ? { app: page('./app.html') } : { main: page('./index.html'), app: page('./app.html'), control: page('./control.html') },
+      },
+    },
+  }
 })

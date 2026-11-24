@@ -19,7 +19,7 @@ pkg install -y python git ffmpeg chromaprint python-pillow rust binutils maturin
 step "Python packages"
 # maturin needs the API level to build pydantic-core's Rust extension on Android
 export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk)"
-pip install -U yt-dlp requests mutagen fastapi uvicorn pydantic
+pip install -U yt-dlp requests httpx mutagen fastapi uvicorn pydantic
 
 step "Soulseek client: sockseek v$SOCKSEEK_VERSION (built from source; upstream ships no arm64 build)"
 if ! command -v sockseek >/dev/null || ! sockseek --version 2>/dev/null | grep -q "$SOCKSEEK_VERSION"; then

@@ -191,13 +191,15 @@ function Machine({ w, online, samples, running }) {
 }
 
 function Invites({ invites, reload }) {
-  const [form, setForm] = useState({ note: '', uses: 1, days: 14 })
+  const [form, setForm] = useState({ note: '', uses: 1, days: 14, role: 'member' })
   const [msg, setMsg] = useState('')
   async function create(e) {
     e.preventDefault()
     try {
-      const code = await rpc('create_invite', { p_note: form.note, p_max_uses: Number(form.uses), p_days: Number(form.days) })
-      setMsg(`New code: ${code}. Share it with the person, along with the link sherofetch.vercel.app/app#join.`)
+      const code = await rpc('create_invite', { p_note: form.note, p_max_uses: Number(form.uses), p_days: Number(form.days), p_role: form.role })
+      setMsg(form.role === 'worker'
+        ? `New machine code: ${code}. On the new machine run: python -m worker.sherofetch_worker --setup`
+        : `New code: ${code}. Share it with the person, along with the link sherofetch.vercel.app/app#join.`)
       setForm({ ...form, note: '' })
       reload()
     } catch (err) { setMsg(err.message) }
@@ -207,6 +209,7 @@ function Invites({ invites, reload }) {
     <section aria-labelledby="inv-h">
       <h2 id="inv-h">Invite codes</h2>
       <form className="inline-form" onSubmit={create}>
+        <label className="lbl">Kind<select className="field" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="member">A person</option><option value="worker">A machine</option></select></label>
         <label className="lbl">Who is it for<input className="field" value={form.note} maxLength={80} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="a name you will recognise" /></label>
         <label className="lbl">Uses<input className="field" type="number" min="1" max="100" value={form.uses} onChange={(e) => setForm({ ...form, uses: e.target.value })} /></label>
         <label className="lbl">Valid for days<input className="field" type="number" min="0" max="365" value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })} /></label>
@@ -218,8 +221,8 @@ function Invites({ invites, reload }) {
         <tbody>{invites.map((i) => (
           <tr key={i.code}>
             <td><code>{i.code}</code></td><td>{i.note || ''}</td><td>{i.uses} of {i.max_uses}</td>
-            <td>{i.role === 'owner' ? 'owner code' : live(i) ? (i.expires_at ? `until ${new Date(i.expires_at).toLocaleDateString()}` : 'open') : i.revoked ? 'revoked' : 'used up or expired'}</td>
-            <td>{live(i) && i.role === 'member' && <button className="btn btn--ghost" type="button" onClick={() => rpc('revoke_invite', { p_code: i.code }).then(reload)}>Revoke</button>}</td>
+            <td>{i.role === 'owner' ? 'owner code' : i.role === 'worker' && live(i) ? 'machine code, unused' : live(i) ? (i.expires_at ? `until ${new Date(i.expires_at).toLocaleDateString()}` : 'open') : i.revoked ? 'revoked' : 'used up or expired'}</td>
+            <td>{live(i) && i.role !== 'owner' && <button className="btn btn--ghost" type="button" onClick={() => rpc('revoke_invite', { p_code: i.code }).then(reload)}>Revoke</button>}</td>
           </tr>
         ))}</tbody>
       </table>

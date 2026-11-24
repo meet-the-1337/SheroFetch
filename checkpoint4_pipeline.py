@@ -425,7 +425,10 @@ def run_sockseek_query(
     if audio_format.lower() == "flac" or prefer_flac:
         # Strictly require genuine FLAC rips from Soulseek peers
         cmd.extend(["--format", "flac", "--pref-format", "flac"])
-    elif audio_format.lower() in ["mp3", "m4a", "wav"]:
+    elif audio_format.lower() == "mp3":
+        # Only genuine 320kbps rips, never a 128kbps copy that would sound worse than YouTube
+        cmd.extend(["--format", "mp3", "--pref-format", "mp3", "--min-bitrate", "320"])
+    elif audio_format.lower() in ["m4a", "wav"]:
         cmd.extend(["--pref-format", audio_format.lower()])
 
     cmd.extend(["--user", u, "--pass", p])
@@ -756,6 +759,15 @@ def run_fallback_any_audio(
     return None
 
 
+def mp3_kbps(path: Path) -> Optional[int]:
+    """Bitrate of an MP3 in kbps, or None when it cannot be read."""
+    try:
+        from mutagen.mp3 import MP3
+        return round(MP3(str(path)).info.bitrate / 1000)
+    except Exception:
+        return None
+
+
 def download_waterfall_pipeline(
     artist: str,
     track: str,
@@ -814,7 +826,9 @@ def download_waterfall_pipeline(
     # =========================================================================
     # TIER 1: 🟢 Green Dot — True Lossless P2P FLAC (Soulseek / sockseek)
     # =========================================================================
-    if is_flac and not force_sockseek_fail:
+    # MP3 requests also ask Soulseek first, but only keep genuine 320kbps CD rips.
+    p2p_fmt = "flac" if is_flac else ("mp3" if preferred_format.lower() == "mp3" else None)
+    if p2p_fmt and not force_sockseek_fail:
         # Smart P2P Query Formulator to maximize Tier 1 Green Dot FLAC discovery:
         # 1. Strip remaster/deluxe/anniversary version tags that peers never use
         pure_t = re.sub(r'[\(\[].*?[\)\]]', '', clean_t).strip()
@@ -878,7 +892,7 @@ def download_waterfall_pipeline(
                     u_active, _ = get_soulseek_credentials(validate=False)
                     if not u_active:
                         break
-                    print(f"  [TIER 1 - GREEN] Querying Soulseek P2P mesh ({v_idx}/{len(variations)}): '{var_query}' (Format: FLAC)...")
+                    print(f"  [TIER 1 - GREEN] Querying Soulseek P2P mesh ({v_idx}/{len(variations)}): '{var_query}' (Format: {p2p_fmt.upper()})...")
                     if simulate_invalid_file and v_idx == 1:
                         cand = output_dir / f"{artist} - {clean_t}.flac"
                         cand.write_bytes(b"DUMMY_DATA" * 500)
@@ -886,19 +900,25 @@ def download_waterfall_pipeline(
                         cand = run_sockseek_query(
                             var_query,
                             output_dir,
-                            timeout_sec=90,
-                            prefer_flac=True,
-                            audio_format="flac",
+                            timeout_sec=90 if is_flac else 45,
+                            prefer_flac=is_flac,
+                            audio_format=p2p_fmt,
                             worker_id=worker_id,
                             slsk_user=slsk_user,
                             slsk_pass=slsk_pass,
                             listen_port=listen_port
                         )
                     if cand and cand.exists():
-                        is_valid, reason, _ = validate_audio_file(cand, artist, clean_t, expected_duration, expected_format="flac")
+                        is_valid, reason, _ = validate_audio_file(cand, artist, clean_t, expected_duration, expected_format=p2p_fmt)
+                        if is_valid and p2p_fmt == "mp3" and (mp3_kbps(cand) or 0) < 315:
+                            is_valid = False
+                            print(f"  [TIER 1] Soulseek copy is {mp3_kbps(cand)}kbps, below 320kbps. Skipping it.")
                         if is_valid:
-                            print(f"  [TIER 1 - GREEN] SUCCESS: Bit-perfect FLAC acquired via Soulseek P2P! '{cand.name}'")
-                            return cand, "green", "Lossless P2P FLAC (1411kbps+)", "Soulseek P2P Network", retried
+                            if is_flac:
+                                print(f"  [TIER 1 - GREEN] SUCCESS: Bit-perfect FLAC acquired via Soulseek P2P! '{cand.name}'")
+                                return cand, "green", "Lossless P2P FLAC (1411kbps+)", "Soulseek P2P Network", retried
+                            print(f"  [TIER 1] SUCCESS: 320kbps MP3 rip acquired via Soulseek P2P! '{cand.name}'")
+                            return cand, "red", "320kbps P2P MP3 rip", "Soulseek P2P Network", retried
                         else:
                             cand.unlink(missing_ok=True)
                             retried = True

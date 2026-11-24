@@ -3,10 +3,13 @@
 
 Takes songs from the Supabase queue, fetches them with the local pipeline (one subprocess per
 song, so progress streams and a cancel can stop it), and serves finished files through a tiny
-file-only HTTP server. Only that server is exposed to the internet, through a Cloudflare quick
-tunnel whose address is published with every heartbeat.
+file-only HTTP server. Only that server is exposed to the internet, through a Cloudflare tunnel
+whose address is published with every heartbeat: a named tunnel (CLOUDFLARE_TUNNEL_TOKEN plus
+TUNNEL_PUBLIC_URL, a fixed address) when configured, otherwise a quick tunnel whose address
+changes on every restart and is pushed to Supabase straight away.
 
 Config: ~/.config/sherofetch/worker.env (KEY=VALUE lines), overridden by the environment.
+First run: python -m worker.sherofetch_worker --setup  (asks for a worker invite code).
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ import threading
 import time
 from pathlib import Path
 
-import requests
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,7 +50,7 @@ def load_config() -> dict:
                 if "=" in line and not line.lstrip().startswith("#"):
                     k, v = line.split("=", 1)
                     conf[k.strip()] = v.strip()
-    conf.update({k: v for k, v in os.environ.items() if k.startswith(("SUPABASE_", "WORKER_", "SHEROFETCH_", "FILE_", "GUEST_", "ALLOWED_", "TUNNEL", "CLOUDFLARED"))})
+    conf.update({k: v for k, v in os.environ.items() if k.startswith(("SUPABASE_", "WORKER_", "SHEROFETCH_", "FILE_", "GUEST_", "ALLOWED_", "TUNNEL", "CLOUDFLARED", "CLOUDFLARE_", "LOW_BATTERY", "IDLE_POLL"))})
     return conf
 
 
@@ -64,8 +67,13 @@ GUEST_CAP = float(C.get("GUEST_CACHE_GB", "4")) * 1e9
 ORIGINS = [o for o in C.get("ALLOWED_ORIGINS", "https://sherofetch.vercel.app,http://127.0.0.1:5173,http://localhost:5173,https://localhost,capacitor://localhost").split(",") if o]
 TUNNEL = C.get("TUNNEL", "cloudflared")
 CLOUDFLARED = C.get("CLOUDFLARED", shutil.which("cloudflared") or "cloudflared")
+TUNNEL_TOKEN = C.get("CLOUDFLARE_TUNNEL_TOKEN", "")
+TUNNEL_PUBLIC_URL = C.get("TUNNEL_PUBLIC_URL", "").rstrip("/")
+PROGRESS_EVERY = 1.5  # seconds between progress RPCs, unless the stage changes
 PYTHON = C.get("WORKER_PYTHON", sys.executable)
 JOB_TIMEOUT = 15 * 60
+LOW_BATTERY = int(C.get("LOW_BATTERY", "20"))
+IDLE_POLL_BATTERY = int(C.get("IDLE_POLL_BATTERY", "30"))
 LINK_DAYS = 30
 IS_TERMUX = "com.termux" in os.environ.get("PREFIX", "")
 
@@ -81,36 +89,47 @@ def log(*a) -> None:
 
 
 class Supa:
+    """Supabase RPCs over one shared async HTTP client, signed in as the worker account."""
+
     def __init__(self) -> None:
-        self.url = C["SUPABASE_URL"].rstrip("/")
-        self.key = C["SUPABASE_KEY"]
-        self.s = requests.Session()
-        self.lock = threading.RLock()
+        self.url = C.get("SUPABASE_URL", "").rstrip("/")
+        self.key = C.get("SUPABASE_KEY", "")
+        self._client: httpx.AsyncClient | None = None
+        self.lock: asyncio.Lock | None = None
         self.token = ""
         self.refresh = ""
         self.expires = 0.0
         self.latency_ms = None
 
-    def _auth(self, force: bool = False) -> str:
-        with self.lock:
+    @property
+    def client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=30, headers={"apikey": self.key})
+            self.lock = asyncio.Lock()
+        return self._client
+
+    async def _auth(self, force: bool = False) -> str:
+        client = self.client
+        assert self.lock
+        async with self.lock:
             if self.token and not force and time.time() < self.expires - 120:
                 return self.token
+            r = None
             if self.refresh and not force:
-                r = self.s.post(f"{self.url}/auth/v1/token?grant_type=refresh_token", json={"refresh_token": self.refresh}, headers={"apikey": self.key}, timeout=20)
-            else:
-                r = None
+                r = await client.post(f"{self.url}/auth/v1/token?grant_type=refresh_token", json={"refresh_token": self.refresh}, timeout=20)
             if r is None or r.status_code >= 400:
-                r = self.s.post(f"{self.url}/auth/v1/token?grant_type=password", json={"email": C["WORKER_EMAIL"], "password": C["WORKER_PASSWORD"]}, headers={"apikey": self.key}, timeout=20)
+                r = await client.post(f"{self.url}/auth/v1/token?grant_type=password", json={"email": C["WORKER_EMAIL"], "password": C["WORKER_PASSWORD"]}, timeout=20)
             r.raise_for_status()
             d = r.json()
             self.token, self.refresh = d["access_token"], d.get("refresh_token", "")
             self.expires = time.time() + float(d.get("expires_in", 3600))
             return self.token
 
-    def rpc(self, fn: str, **args):
+    async def rpc(self, fn: str, **args):
         for attempt in (0, 1):
+            token = await self._auth(force=attempt == 1)
             t0 = time.monotonic()
-            r = self.s.post(f"{self.url}/rest/v1/rpc/{fn}", json=args, headers={"apikey": self.key, "Authorization": f"Bearer {self._auth(force=attempt == 1)}"}, timeout=30)
+            r = await self.client.post(f"{self.url}/rest/v1/rpc/{fn}", json=args, headers={"Authorization": f"Bearer {token}"})
             self.latency_ms = round((time.monotonic() - t0) * 1000)
             if r.status_code == 401 and attempt == 0:
                 continue
@@ -118,20 +137,42 @@ class Supa:
                 raise RuntimeError(f"{fn}: {r.status_code} {r.text[:200]}")
             return r.json() if r.content else None
 
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+
 
 SUPA = Supa()
 _last_logged: dict[str, float] = {}
 
 
+LOOP: asyncio.AbstractEventLoop | None = None
+
+
+async def _event(level: str, message: str, detail: dict | None) -> None:
+    try:
+        await SUPA.rpc("worker_log", p_id=WORKER_ID, p_level=level, p_message=message, p_detail=detail)
+    except Exception as e:  # noqa: BLE001
+        log("could not log event:", e)
+
+
 def event(level: str, message: str, detail: dict | None = None) -> None:
+    """Log an event to Supabase. Safe to call from the loop or from the tunnel thread."""
     key = f"{level}:{message[:80]}"
     if time.time() - _last_logged.get(key, 0) < 600:
         return
     _last_logged[key] = time.time()
+    if LOOP is None:
+        return
+    coro = _event(level, message, detail)
     try:
-        SUPA.rpc("worker_log", p_id=WORKER_ID, p_level=level, p_message=message, p_detail=detail)
-    except Exception as e:  # noqa: BLE001
-        log("could not log event:", e)
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is LOOP:
+        LOOP.create_task(coro)
+    else:
+        asyncio.run_coroutine_threadsafe(coro, LOOP)
 
 
 # ----------------------------------------------------------------------------- served files
@@ -224,24 +265,43 @@ def serve_cover(job_id: str, e: int, s: str):
 
 
 class Tunnel(threading.Thread):
+    """Keeps cloudflared running. Named tunnel when a token is set (fixed address), else a quick
+    tunnel; every new quick-tunnel address wakes the heartbeat so Supabase has it within seconds."""
+
     def __init__(self) -> None:
         super().__init__(daemon=True)
+        self.named = bool(TUNNEL_TOKEN)
         self.url: str | None = None
         self.proc: subprocess.Popen | None = None
         self.stopping = False
         self.restarts = 0
+        self.changed: asyncio.Event | None = None  # set by main() on the loop
+
+    def _announce(self, url: str | None) -> None:
+        self.url = url
+        if self.changed is not None and LOOP is not None:
+            LOOP.call_soon_threadsafe(self.changed.set)
+
+    def _cmd(self) -> list[str]:
+        if self.named:
+            return [CLOUDFLARED, "tunnel", "--no-autoupdate", "run", "--token", TUNNEL_TOKEN]
+        return [CLOUDFLARED, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{FILE_PORT}"]
 
     def run(self) -> None:
         backoff = 3
         while not self.stopping:
             try:
-                self.proc = subprocess.Popen([CLOUDFLARED, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{FILE_PORT}"],
-                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                self.proc = subprocess.Popen(self._cmd(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 started = time.time()
                 for line in self.proc.stdout:  # type: ignore[union-attr]
+                    if self.named:
+                        if self.url is None and "Registered tunnel connection" in line:
+                            self._announce(TUNNEL_PUBLIC_URL)
+                            log("named tunnel up:", TUNNEL_PUBLIC_URL)
+                        continue
                     m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
                     if m and m.group(0) != self.url:
-                        self.url = m.group(0)
+                        self._announce(m.group(0))
                         log("tunnel up:", self.url)
                 self.proc.wait()
                 if time.time() - started > 300:
@@ -252,7 +312,7 @@ class Tunnel(threading.Thread):
                 return
             except Exception as e:  # noqa: BLE001
                 log("tunnel error:", e)
-            self.url = None
+            self._announce(None)
             if not self.stopping:
                 self.restarts += 1
                 event("warn", "The tunnel dropped and is restarting.")
@@ -376,9 +436,10 @@ class Vitals:
 VITALS = Vitals()
 
 
-def local_backend_up() -> bool:
+async def local_backend_up() -> bool:
     try:
-        return requests.get("http://127.0.0.1:5050/", timeout=2).ok
+        async with httpx.AsyncClient(timeout=2) as c:
+            return (await c.get("http://127.0.0.1:5050/")).is_success
     except Exception:  # noqa: BLE001
         return False
 
@@ -420,7 +481,9 @@ def guest_cache_trim() -> None:
 
 async def run_job(job: dict) -> None:
     jid = job["id"]
-    owner = job.get("requester_role") == "owner"
+    # A person's own device keeps every song it fetches in its music folder; shared machines keep
+    # only the owner's songs and hold everyone else's in a cache.
+    owner = job.get("requester_role") == "owner" or bool(job.get("personal"))
     base = OWNER_DIR if owner else GUEST_DIR
     playlist = job["kind"] == "playlist"
     cmd = [PYTHON, "-u", str(ROOT / "worker" / "run_job.py"), "--mode", "playlist" if playlist else "track",
@@ -434,15 +497,16 @@ async def run_job(job: dict) -> None:
     ACTIVE[jid] = {"query": job["query"], "started": time.time()}
     log("fetching", jid[:8], job["query"])
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=str(ROOT), env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-    result, tail, last_push, stage, progress, cancelled = None, [], 0.0, "Fetching", 0.05, False
+    result, tail, last_push, pushed_stage, stage, progress, cancelled = None, [], 0.0, None, "Fetching", 0.05, False
 
-    async def push(force=False):
-        nonlocal last_push, cancelled
-        if not force and time.time() - last_push < 2:
+    async def push():
+        # At most one progress RPC every PROGRESS_EVERY seconds; a new stage may go out at once.
+        nonlocal last_push, pushed_stage, cancelled
+        if stage == pushed_stage and time.time() - last_push < PROGRESS_EVERY:
             return
-        last_push = time.time()
+        last_push, pushed_stage = time.time(), stage
         try:
-            status = await asyncio.to_thread(SUPA.rpc, "worker_progress", p_id=WORKER_ID, p_job=jid, p_stage=stage, p_progress=progress)
+            status = await SUPA.rpc("worker_progress", p_id=WORKER_ID, p_job=jid, p_stage=stage, p_progress=progress)
             if status in ("cancelled", "gone"):
                 cancelled = True
                 proc.kill()
@@ -462,7 +526,7 @@ async def run_job(job: dict) -> None:
             for rx, label, p in STAGES:
                 if rx.search(line) and p >= progress:
                     stage, progress = label, p
-                    await push(force=True)
+                    await push()
                     break
             m = re.search(r"\[download\]\s+([\d.]+)%", line)
             if m:
@@ -488,14 +552,20 @@ async def run_job(job: dict) -> None:
             return
         rows = [{"query": t.get("query") or f"{t.get('artist', '')} - {t.get('title', '')}", "artist": t.get("artist"), "title": t.get("title"),
                  "album": None if t.get("album") == "Official Studio Release" else t.get("album"), "duration": t.get("duration") or None} for t in tracks]
-        n = await asyncio.to_thread(SUPA.rpc, "worker_add_children", p_id=WORKER_ID, p_parent=jid, p_tracks=rows)
-        await finish(jid, True, {"tracks": n, "found": len(tracks), "name": (result or {}).get("playlist_name") or (result or {}).get("name")}, None, None)
+        rows = [r for r in rows if (r["query"] or "").strip(" -")]
+        n = await SUPA.rpc("worker_add_children", p_id=WORKER_ID, p_parent=jid, p_tracks=rows) or 0
+        # Songs past today's limit wait on the playlist itself; the app adds them with queue_more.
+        await finish(jid, True, {"tracks": n, "found": len(rows), "pending": rows[n:],
+                                 "name": (result or {}).get("playlist_name") or (result or {}).get("name")}, None, None)
         return
 
     if not result or result.get("status") != "success":
         reason = (result or {}).get("reason") or next((l for l in reversed(tail) if l.strip()), "The pipeline stopped without a reason.")
-        await finish(jid, False, None, None, reason[:400])
+        # The uploads Shero found go back with the failure, so the person can pick the right one.
+        detail = {"code": (result or {}).get("code"), "candidates": (result or {}).get("candidates") or []}
+        await finish(jid, False, detail, None, reason[:400])
         return
+
 
     path = Path(result.get("file_path") or result.get("final_file_path") or "")
     if not path.exists():
@@ -529,18 +599,35 @@ async def finish(jid, ok, result, lrc, error) -> None:
     log("finished" if ok else "failed", jid[:8], "" if ok else error)
     for attempt in range(5):
         try:
-            await asyncio.to_thread(SUPA.rpc, "worker_finish", p_id=WORKER_ID, p_job=jid, p_ok=ok, p_result=result, p_lrc=lrc, p_error=error)
+            await SUPA.rpc("worker_finish", p_id=WORKER_ID, p_job=jid, p_ok=ok, p_result=result, p_lrc=lrc, p_error=error)
             return
         except Exception as e:  # noqa: BLE001
             log("finish failed, retrying:", e)
             await asyncio.sleep(3 * (attempt + 1))
 
 
+def on_battery() -> bool:
+    bat = VITALS.battery()
+    return bool(bat) and not bat.get("charging")
+
+
+def accepting() -> bool:
+    """A phone running on its own battery stops taking new songs below LOW_BATTERY percent, so it
+    never drains itself flat; it starts again once it is charging or back above the line."""
+    bat = VITALS.battery()
+    if not bat or bat.get("charging") or bat.get("pct") is None:
+        return True
+    return bat["pct"] > LOW_BATTERY
+
+
 async def slot(n: int) -> None:
     idle = 0
     while not STOP.is_set():
+        if not accepting():
+            await asyncio.sleep(60)
+            continue
         try:
-            job = await asyncio.to_thread(SUPA.rpc, "worker_claim", p_id=WORKER_ID)
+            job = await SUPA.rpc("worker_claim", p_id=WORKER_ID)
         except Exception as e:  # noqa: BLE001
             log(f"slot {n}: claim failed:", e)
             job = None
@@ -554,8 +641,11 @@ async def slot(n: int) -> None:
                 await finish(job["id"], False, None, None, f"Worker error: {e}")
             continue
         idle += 1
+        # Polling is the main idle cost. Ask often right after work; on battery, back off to 30 s
+        # once the queue has been empty for a couple of minutes.
+        wait = 4 if idle < 15 else (IDLE_POLL_BATTERY if on_battery() and idle > 30 else 9)
         try:
-            await asyncio.wait_for(STOP.wait(), timeout=4 if idle < 15 else 9)
+            await asyncio.wait_for(STOP.wait(), timeout=wait)
         except asyncio.TimeoutError:
             pass
 
@@ -579,7 +669,8 @@ async def heartbeat() -> None:
             tunnel_ok = None
             if url:
                 try:
-                    tunnel_ok = (await asyncio.to_thread(requests.get, f"{url}/health", timeout=8)).ok
+                    async with httpx.AsyncClient(timeout=8) as c:
+                        tunnel_ok = (await c.get(f"{url}/health")).is_success
                 except Exception:  # noqa: BLE001
                     tunnel_ok = False
                 tunnel_fail = 0 if tunnel_ok else tunnel_fail + 1
@@ -590,27 +681,34 @@ async def heartbeat() -> None:
                 "started_at": VITALS.started, "uptime_s": round(time.time() - VITALS.started), "host": platform.node(),
                 "os": "Android (Termux)" if IS_TERMUX else f"{platform.system()} {platform.release()}", "python": platform.python_version(),
                 "ytdlp": VITALS.ytdlp, "sockseek": bool(shutil.which("sockseek")), "soulseek_account": (HOME / ".config" / "sockseek" / "sockseek.conf").exists(),
+                "tunnel_mode": "named" if TUN and TUN.named else ("quick" if TUN else "off"),
                 "tunnel": "off" if not TUN else ("up" if tunnel_ok else ("checking" if url and tunnel_ok is None else "down")), "tunnel_restarts": TUN.restarts if TUN else 0,
-                "backend_5050": await asyncio.to_thread(local_backend_up), "active": [{"id": k, **v} for k, v in ACTIVE.items()],
+                "backend_5050": await local_backend_up(), "active": [{"id": k, **v} for k, v in ACTIVE.items()],
                 "done": COUNTS["done"], "failed": COUNTS["failed"], "bytes_served": BYTES_SERVED[0],
                 "cpu": cpu, "load1": VITALS.load1(), "mem_pct": VITALS.mem(), "rx_bps": rx, "tx_bps": tx,
                 "battery": bat, "temp_c": VITALS.temp(bat), "disk_free_gb": VITALS.disk_free_gb(OWNER_DIR if OWNER_DIR.exists() else HOME),
                 "music_dir": str(OWNER_DIR), "capacity": CAPACITY, "latency_ms": SUPA.latency_ms,
             }
-            await asyncio.to_thread(SUPA.rpc, "worker_heartbeat", p_id=WORKER_ID, p_name=WORKER_NAME, p_kind=WORKER_KIND,
-                                    p_public_url=url if tunnel_ok else None, p_version=VERSION, p_capacity=CAPACITY,
-                                    p_accepting=True, p_stats=stats, p_sample=sample)
+            await SUPA.rpc("worker_heartbeat", p_id=WORKER_ID, p_name=WORKER_NAME, p_kind=WORKER_KIND,
+                           p_public_url=url if tunnel_ok else None, p_version=VERSION, p_capacity=CAPACITY,
+                           p_accepting=accepting(), p_stats=stats, p_sample=sample)
             if time.time() - last_requeue > 60:
                 last_requeue = time.time()
-                n = await asyncio.to_thread(SUPA.rpc, "worker_requeue_stale")
+                n = await SUPA.rpc("worker_requeue_stale")
                 if n:
                     event("info", f"Put {n} stalled song(s) back in the queue.")
         except Exception as e:  # noqa: BLE001
             log("heartbeat failed:", e)
-        try:
-            await asyncio.wait_for(STOP.wait(), timeout=15)
-        except asyncio.TimeoutError:
-            pass
+        # Sleep 15 s, or wake early when the tunnel address changes so the new URL is live in ~2 s.
+        waits = [asyncio.create_task(STOP.wait())]
+        if TUN and TUN.changed:
+            waits.append(asyncio.create_task(TUN.changed.wait()))
+        _, pending = await asyncio.wait(waits, timeout=15, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        if TUN and TUN.changed and TUN.changed.is_set():
+            TUN.changed.clear()
+            await asyncio.sleep(1)  # give the fresh tunnel a moment to accept /health
 
 
 def serve_files() -> uvicorn.Server:
@@ -624,24 +722,32 @@ async def main() -> None:
     missing = [k for k in ("SUPABASE_URL", "SUPABASE_KEY", "WORKER_EMAIL", "WORKER_PASSWORD", "FILE_SECRET") if not C.get(k)]
     if missing:
         sys.exit(f"Missing config: {', '.join(missing)} (see ~/.config/sherofetch/worker.env)")
-    loop = asyncio.get_running_loop()
+    global LOOP
+    loop = LOOP = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, STOP.set)
+        try:
+            loop.add_signal_handler(sig, STOP.set)
+        except (NotImplementedError, RuntimeError):  # Windows: Ctrl+C still ends the process
+            pass
     server = serve_files()
     if TUN:
+        if TUN.named and not TUNNEL_PUBLIC_URL:
+            sys.exit("CLOUDFLARE_TUNNEL_TOKEN is set, so TUNNEL_PUBLIC_URL (the tunnel's fixed https address) is needed too.")
+        TUN.changed = asyncio.Event()
         TUN.start()
-    await asyncio.to_thread(SUPA.rpc, "worker_heartbeat", p_id=WORKER_ID, p_name=WORKER_NAME, p_kind=WORKER_KIND, p_public_url=None,
-                            p_version=VERSION, p_capacity=CAPACITY, p_accepting=True, p_stats={"starting": True}, p_sample=None)
-    released = await asyncio.to_thread(SUPA.rpc, "worker_release", p_id=WORKER_ID)
+    await SUPA.rpc("worker_heartbeat", p_id=WORKER_ID, p_name=WORKER_NAME, p_kind=WORKER_KIND, p_public_url=None,
+                   p_version=VERSION, p_capacity=CAPACITY, p_accepting=True, p_stats={"starting": True}, p_sample=None)
+    released = await SUPA.rpc("worker_release", p_id=WORKER_ID)
     event("info", f"{WORKER_NAME} worker {VERSION} started" + (f", handed back {released} unfinished song(s)" if released else ""))
     log(f"{WORKER_NAME} worker up: capacity {CAPACITY}, files on :{FILE_PORT}, owner songs to {OWNER_DIR}")
     tasks = [asyncio.create_task(heartbeat())] + [asyncio.create_task(slot(i)) for i in range(CAPACITY)]
     await STOP.wait()
     log("stopping")
     try:
-        await asyncio.to_thread(SUPA.rpc, "worker_release", p_id=WORKER_ID)
+        await SUPA.rpc("worker_release", p_id=WORKER_ID)
     except Exception:  # noqa: BLE001
         pass
+    await SUPA.close()
     for t in tasks:
         t.cancel()
     if TUN:
@@ -649,5 +755,119 @@ async def main() -> None:
     server.should_exit = True
 
 
+# ----------------------------------------------------------------------------- first-time setup
+
+
+def arg(flag: str) -> str | None:
+    a = sys.argv[1:]
+    return a[a.index(flag) + 1] if flag in a and a.index(flag) + 1 < len(a) else None
+
+
+def soulseek_login() -> None:
+    """Ask for this person's own Soulseek account and keep it only on this device."""
+    import getpass
+
+    conf = HOME / ".config" / "sockseek" / "sockseek.conf"
+    if conf.exists() and conf.read_text(errors="ignore").strip():
+        print(f"Soulseek is already set up on this device ({conf}).")
+        return
+    print("\nSoulseek gives real FLAC and 320 kbps rips. It is optional: without it, songs come from YouTube.")
+    print("No account yet? Just choose a new username and password; Soulseek makes the account on first login.")
+    user = input("Soulseek username (Enter to skip): ").strip()
+    if not user:
+        print("Skipped. Add it later by running --setup again.")
+        return
+    password = getpass.getpass("Soulseek password (stays on this device): ")
+    if not password:
+        print("No password, so Soulseek was skipped.")
+        return
+    conf.parent.mkdir(parents=True, exist_ok=True)
+    conf.write_text(f"username = {user}\npassword = {password}\n", encoding="utf-8")
+    try:
+        os.chmod(conf, 0o600)
+    except OSError:
+        pass
+    print(f"Saved to {conf}.")
+
+
+def setup() -> None:
+    """Make a machine account from a machine invite (owner) or a device code (any member, for their
+    own device) and write worker.env."""
+    import getpass
+    import secrets
+
+    target = CONF_DIR / "worker.env"
+    if target.exists() and input(f"{target} already exists. Replace it? [y/N] ").strip().lower() != "y":
+        sys.exit("Left the existing worker.env alone.")
+    url, key = C.get("SUPABASE_URL"), C.get("SUPABASE_KEY")
+    site = arg("--site")
+    if site and not (url and key):
+        try:
+            d = httpx.get(f"{site.rstrip('/')}/device.json", timeout=20).json()
+            url, key = d.get("url"), d.get("key")
+        except Exception as e:  # noqa: BLE001
+            print(f"Could not read {site}/device.json: {e}")
+    url = (url or input("Supabase project URL (https://....supabase.co): ")).strip().rstrip("/")
+    key = (key or input("Supabase publishable (anon) key: ")).strip()
+    if not re.match(r"^https://[a-z0-9-]+\.supabase\.co$", url) or not key:
+        sys.exit("That Supabase URL or key does not look right.")
+    code = (arg("--code") or getpass.getpass("Device or machine code: ")).strip().lower()
+    personal = code.startswith("device-")
+    host = re.sub(r"[^a-z0-9]", "", platform.node().lower())[:8] or "device"
+    default_id = f"dev_{host}_{secrets.token_hex(2)}" if personal else re.sub(r"[^a-z0-9_]", "_", f"worker_{platform.node().lower()}")[:20]
+    default_kind = "phone" if IS_TERMUX else "pc"
+    if personal:
+        # A person's own device: no questions beyond a name; the id only has to be unique.
+        wid, kind = default_id, default_kind
+        name = (arg("--name") or input(f"Name for this device [My {default_kind.upper() if default_kind == 'pc' else 'phone'}]: ").strip()[:40]
+                or f"My {default_kind.upper() if default_kind == 'pc' else 'phone'}")
+    else:
+        wid = (input(f"Machine id [{default_id}]: ").strip().lower() or default_id)
+        if not re.match(r"^[a-z0-9_]{3,20}$", wid):
+            sys.exit("The machine id must be 3 to 20 letters, digits or underscores.")
+        kind = (input(f"Kind, pc / phone / server [{default_kind}]: ").strip().lower() or default_kind)
+        if kind not in ("pc", "phone", "server"):
+            sys.exit("Kind must be pc, phone or server.")
+        name = input(f"Display name [{kind.upper() if kind == 'pc' else kind.title()}]: ").strip()[:40] or (kind.upper() if kind == "pc" else kind.title())
+
+    h = {"apikey": key, "Content-Type": "application/json"}
+    with httpx.Client(timeout=30, headers=h) as c:
+        ok = c.post(f"{url}/rest/v1/rpc/check_invite", json={"p_code": code, "p_role": "worker"})
+        if ok.status_code >= 400 or ok.json() is not True:
+            sys.exit("That code is not valid, used up or expired. Make a new one in the app (or the Control Room).")
+        email, password = f"{wid}@users.example.com", secrets.token_urlsafe(24)
+        r = c.post(f"{url}/auth/v1/signup", json={"email": email, "password": password, "data": {"username": wid, "invite_code": code}})
+        if r.status_code >= 400:
+            msg = r.json().get("msg") or r.json().get("message") or r.text[:200]
+            sys.exit(f"Sign-up failed: {msg}")
+        t = c.post(f"{url}/auth/v1/token?grant_type=password", json={"email": email, "password": password})
+        if t.status_code >= 400:
+            sys.exit("The account was made but cannot sign in yet (email confirmation may be on in Supabase Auth).")
+
+    CONF_DIR.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Written by sherofetch_worker --setup. Keep this file private.",
+        f"SUPABASE_URL={url}", f"SUPABASE_KEY={key}",
+        f"WORKER_ID={wid}", f"WORKER_NAME={name}", f"WORKER_KIND={kind}", "WORKER_CAPACITY=1",
+        f"WORKER_EMAIL={email}", f"WORKER_PASSWORD={password}", f"FILE_SECRET={secrets.token_hex(32)}",
+        f"FILE_PORT={FILE_PORT}",
+        "# Optional fixed address: a Cloudflare named tunnel's token and its public https URL.",
+        "# CLOUDFLARE_TUNNEL_TOKEN=", "# TUNNEL_PUBLIC_URL=https://worker.example.com",
+    ]
+    if personal:
+        music = Path.home() / "Music" / "SheroFetch" if not IS_TERMUX else Path("/sdcard/Music/SheroFetch")
+        lines += [f"SHEROFETCH_MUSIC_DIR={music}", "WORKER_PERSONAL=1"]
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.chmod(tmp, 0o600)
+    tmp.replace(target)
+    print(f"Device '{name}' is linked. Settings written to {target}.")
+    soulseek_login()
+    print("Start it with: python -u worker/sherofetch_worker.py")
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    if "--setup" in sys.argv[1:]:
+        setup()
+    else:
+        asyncio.run(main())

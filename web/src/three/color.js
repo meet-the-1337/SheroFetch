@@ -17,9 +17,26 @@ function oklchToSrgb(L, C, h) {
   })
 }
 
+// Any other CSS colour (the production build minifies oklch() tokens into hex or lab()) is
+// resolved by the browser itself through a 1x1 canvas.
+let probe = null
+function browserColor(value) {
+  try {
+    probe ||= document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+    probe.clearRect(0, 0, 1, 1)
+    probe.fillStyle = '#808080'
+    probe.fillStyle = value
+    probe.fillRect(0, 0, 1, 1)
+    const [r, g, b] = probe.getImageData(0, 0, 1, 1).data
+    return [r / 255, g / 255, b / 255]
+  } catch {
+    return [0.5, 0.5, 0.5]
+  }
+}
+
 export function parseOklch(value) {
   const m = /oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)/.exec(value || '')
-  if (!m) return [0.5, 0.5, 0.5]
+  if (!m) return value ? browserColor(value) : [0.5, 0.5, 0.5]
   const L = m[2] === '%' ? parseFloat(m[1]) / 100 : parseFloat(m[1])
   return oklchToSrgb(L, parseFloat(m[3]), parseFloat(m[4]))
 }

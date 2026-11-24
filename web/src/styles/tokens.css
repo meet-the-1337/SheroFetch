@@ -19,6 +19,7 @@
   --color-field: oklch(85% 0.15 88); --color-field-ink: oklch(24% 0.025 45);
   --color-seal: oklch(49% 0.15 255); --color-seal-ink: oklch(97% 0.014 88);
   --color-focus: oklch(49% 0.19 255);
+  --color-sky-top: oklch(88% 0.07 230); --color-sky-low: oklch(90% 0.09 70);
   --color-fur: oklch(98.5% 0.006 95); --color-fur-shade: oklch(80% 0.04 250);
   --color-error: oklch(46% 0.18 27); --color-success: oklch(46% 0.11 150);
 

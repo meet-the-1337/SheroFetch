@@ -13,7 +13,14 @@ if (webgl) html.classList.add('webgl')
 let hero = null
 if (webgl) {
   import('./hero.js').then(({ mountHero }) => {
-    hero = mountHero($('[data-hero-canvas]'), $('[data-bubble]'))
+    const houseBtn = $('[data-house]')
+    hero = mountHero($('[data-hero-canvas]'), $('[data-bubble]'), {
+      houseBtn,
+      onDrawn: (ok) => {
+        if (ok) { html.classList.add('hero-drawn'); houseBtn.hidden = false } else { hero = null; html.classList.remove('webgl') }
+      },
+      onLost: (isLost) => { html.classList.toggle('hero-drawn', !isLost); houseBtn.hidden = isLost },
+    })
     if (!hero) html.classList.remove('webgl')
   })
 }
@@ -155,6 +162,7 @@ async function go(payload) {
 
 function choose(i) {
   picked = i
+  hero?.picked(results[i]?.title)
   render()
   list.children[i]?.querySelector('button')?.focus()
   const r = results[i]

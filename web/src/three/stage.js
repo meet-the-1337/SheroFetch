@@ -6,7 +6,7 @@ export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)'
 
 // One crayon-drawn WebGL stage bound to a canvas: sizing, pixel ratio, pausing off-screen,
 // and the stepped "line boil" that makes the drawing look hand-animated at 8 frames a second.
-export function createStage(canvas, { fov = 32, onFrame, maxDpr = 2 } = {}) {
+export function createStage(canvas, { fov = 32, onFrame, onDrawn, onLost, maxDpr = 2 } = {}) {
   let renderer
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'low-power' })
@@ -51,10 +51,27 @@ export function createStage(canvas, { fov = 32, onFrame, maxDpr = 2 } = {}) {
     last = now
   }
   const sync = () => {
-    const should = ready && visible && !document.hidden && !still
+    const should = ready && visible && !document.hidden && !still && !lost
     if (should && !running) { running = true; last = performance.now(); loop() }
     if (!should && running) { running = false; cancelAnimationFrame(raf) }
   }
+
+  // A hot or busy GPU can drop the context. Then the canvas shows nothing (Chrome paints it grey),
+  // so hand back to the still picture, and draw again if the browser restores the context.
+  let lost = false
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault()
+    lost = true
+    running = false
+    cancelAnimationFrame(raf)
+    onLost?.(true)
+  })
+  canvas.addEventListener('webglcontextrestored', () => {
+    lost = false
+    onLost?.(false)
+    sync()
+    if (!running) render(0)
+  })
 
   const ro = new ResizeObserver(resize)
   ro.observe(canvas)
@@ -66,7 +83,26 @@ export function createStage(canvas, { fov = 32, onFrame, maxDpr = 2 } = {}) {
 
   resize()
   // The caller finishes building its scene in this same task; draw from the next frame on.
-  requestAnimationFrame(() => { ready = true; render(0); sync() })
+  // Some GPUs give a context but draw nothing; only report success once real pixels exist,
+  // so the page keeps its still picture instead of showing an empty frame.
+  const drewSomething = () => {
+    const gl = renderer.getContext()
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight
+    const px = new Uint8Array(4)
+    for (const [fx, fy] of [[0.5, 0.5], [0.3, 0.3], [0.7, 0.4], [0.5, 0.2], [0.2, 0.7]]) {
+      gl.readPixels(Math.floor(w * fx), Math.floor(h * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+      if (px[3] > 0) return true
+    }
+    return false
+  }
+  requestAnimationFrame(() => {
+    ready = true
+    render(0)
+    let ok = false
+    try { ok = drewSomething() } catch { ok = false }
+    onDrawn?.(ok)
+    sync()
+  })
   return {
     renderer, scene, camera, kit, palette,
     get still() { return still },

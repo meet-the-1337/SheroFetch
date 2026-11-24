@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:native": "vite build --mode native && node -e \"require('fs').renameSync('../tauri-music-downloader/dist/app.html', '../tauri-music-downloader/dist/index.html')\"",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/core": "8.5.1",
     "@supabase/supabase-js": "^2.119.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

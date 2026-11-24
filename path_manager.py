@@ -229,3 +229,45 @@ def read_library_index(index_file: Optional[Path] = None) -> List[Dict[str, Any]
             return data if isinstance(data, list) else []
     except Exception:
         return []
+
+
+AUDIO_EXTS = {".flac", ".mp3", ".opus", ".ogg", ".m4a", ".wav"}
+
+
+def cleanup_failed_track(file_path: Path, index_file: Optional[Path] = None) -> None:
+    """Undo a rejected track: its audio, its .lrc, its index entry, and the album folder's
+    cover.jpg and the folder itself once no other song is left in it."""
+    file_path = Path(file_path)
+    for p in (file_path, file_path.with_suffix(".lrc")):
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    target_index = index_file if index_file else DEFAULT_INDEX_FILE
+    if target_index.exists():
+        lock_fd = None
+        try:
+            import fcntl
+            lock_fd = open(target_index.with_suffix(".lock"), "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        except Exception:
+            lock_fd = None
+        try:
+            items = read_library_index(target_index)
+            kept = [it for it in items if Path(it.get("file_path") or "") != file_path]
+            if len(kept) != len(items):
+                tmp = target_index.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(kept, indent=2, ensure_ascii=False), encoding="utf-8")
+                tmp.replace(target_index)
+        finally:
+            if lock_fd:
+                lock_fd.close()
+
+    folder = file_path.parent
+    try:
+        if folder.is_dir() and not any(p.suffix.lower() in AUDIO_EXTS for p in folder.iterdir()):
+            (folder / "cover.jpg").unlink(missing_ok=True)
+            folder.rmdir()
+    except OSError:
+        pass  # something else still lives in the folder

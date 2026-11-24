@@ -3,8 +3,12 @@
   "appName": "SheroFetch",
   "webDir": "dist",
   "server": {
-    "url": "https://sherofetch.vercel.app/app",
     "androidScheme": "https",
-    "allowNavigation": ["sherofetch.vercel.app", "*.trycloudflare.com", "*.supabase.co"]
+    "cleartext": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
   }
 }
