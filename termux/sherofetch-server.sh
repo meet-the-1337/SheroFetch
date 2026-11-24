@@ -103,11 +103,16 @@ case "${1:-start}" in
 #!/data/data/com.termux/files/usr/bin/sh
 # Started by Termux:Boot after the phone boots.
 termux-wake-lock
-command -v sshd >/dev/null && sshd
+pgrep -x sshd >/dev/null || sshd
 "$SELF" start
 EOF
     chmod +x "$HOME/.termux/boot/10-sherofetch"
     echo "boot hook installed: $HOME/.termux/boot/10-sherofetch"
+    # Watchdog: every 15 minutes Android wakes Termux:API, which re-runs the (idempotent) start.
+    if command -v termux-job-scheduler >/dev/null; then
+      termux-job-scheduler --job-id 1337 --script "$HOME/.termux/boot/10-sherofetch" --period-ms 900000 --persisted true --network any >/dev/null 2>&1 \
+        && echo "watchdog scheduled every 15 minutes"
+    fi
     ;;
   *) echo "usage: $0 [start|stop|restart|status|token|install-boot|logs]"; exit 1 ;;
 esac

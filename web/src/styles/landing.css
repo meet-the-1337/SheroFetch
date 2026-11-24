@@ -50,7 +50,7 @@
 .fetch__help a { color: var(--color-seal); font-weight: 700; }
 .fetch__help a:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
 
-.results { display: grid; gap: var(--space-2xs); margin: 0; padding: 0; list-style: none; max-height: 21rem; overflow-y: auto; overscroll-behavior: contain; }
+.results { display: grid; gap: var(--space-2xs); margin: 0; padding: 0; list-style: none; max-height: 26rem; overflow-y: auto; overscroll-behavior: contain; }
 .pick { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; width: 100%; padding: var(--space-xs); border: var(--line-crayon) solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--color-ink); text-align: left; cursor: pointer; transition: background-color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out); }
 .pick:hover { background: var(--color-paper-2); }
 .pick:active { background: var(--color-paper-3); }

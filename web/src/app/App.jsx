@@ -140,7 +140,7 @@ function Fetch({ profile, onQueued }) {
   async function queue(payload) {
     setBusy(true)
     setMsg('')
-    const row = { query: payload.query, artist: payload.artist || null, title: payload.title || null, album: payload.album || null,
+    const row = { query: payload.query, artist: payload.artist || null, title: payload.title || null, album: payload.album || null, duration: payload.duration || null,
       url: payload.url || null, kind: payload.url && !/\/track\/|watch\?v=|youtu\.be\//.test(payload.url) ? 'playlist' : 'track',
       format: payload.format || format, target: profile.role === 'owner' ? target : 'any' }
     if (row.url && row.kind === 'track') row.query = row.url
@@ -170,7 +170,7 @@ function Fetch({ profile, onQueued }) {
     const mine = ++seq.current
     const t = setTimeout(async () => {
       try {
-        const data = await (await fetch(`/api/search?q=${encodeURIComponent(term)}`)).json()
+        const data = await (await fetch(`/api/search?v=3&q=${encodeURIComponent(term)}`)).json()
         if (mine !== seq.current) return
         setResults(data.results || [])
         setMsg(data.error || ((data.results || []).length ? '' : 'No match. Check the spelling, or add the artist.'))

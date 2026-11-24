@@ -114,7 +114,7 @@ function render() {
 async function search(q) {
   const mine = ++seq
   try {
-    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+    const r = await fetch(`/api/search?v=3&q=${encodeURIComponent(q)}`)
     const data = await r.json()
     if (mine !== seq) return
     results = data.results || []
@@ -158,7 +158,7 @@ function choose(i) {
   render()
   list.children[i]?.querySelector('button')?.focus()
   const r = results[i]
-  go({ query: `${r.artist} - ${r.title}`, artist: r.artist, title: r.title, album: r.album, format: savedFormat() })
+  go({ query: `${r.artist} - ${r.title}`, artist: r.artist, title: r.title, album: r.album, duration: r.duration, format: savedFormat() })
 }
 
 form.addEventListener('submit', (e) => {

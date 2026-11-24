@@ -386,7 +386,7 @@ def local_backend_up() -> bool:
 # ----------------------------------------------------------------------------- the jobs
 
 STAGES = [
-    (re.compile(r"\[(SEARCH|EXACT MATCH|URL RESOLVED)\]"), "Sniffing out the right version", 0.1),
+    (re.compile(r"\[(SEARCH|EXACT MATCH|URL RESOLVED|PICK)\]"), "Sniffing out the right version", 0.1),
     (re.compile(r"\[SELECT\]"), "Found the right version", 0.16),
     (re.compile(r"\[PATH\]"), "Making room in the library", 0.2),
     (re.compile(r"\[SKIP\]"), "Already had this one", 0.9),
@@ -396,6 +396,7 @@ STAGES = [
     (re.compile(r"\[TIER 3"), "Pulling the audio from YouTube", 0.5),
     (re.compile(r"\[TIER 4"), "Trying a backup audio stream", 0.6),
     (re.compile(r"\[TITANIUM|\[VALIDATE\]"), "Checking it is the right song", 0.75),
+    (re.compile(r"Retrying from the picked upload"), "Wrong length, trying the official upload", 0.4),
     (re.compile(r"\[TAG\]"), "Adding tags, cover art and lyrics", 0.88),
     (re.compile(r"\[COMPLETE\]"), "Almost there", 0.95),
 ]
@@ -424,9 +425,11 @@ async def run_job(job: dict) -> None:
     playlist = job["kind"] == "playlist"
     cmd = [PYTHON, "-u", str(ROOT / "worker" / "run_job.py"), "--mode", "playlist" if playlist else "track",
            "--query", job["query"], "--format", job["format"], "--base-dir", str(base)]
-    for flag, key in (("--artist", "artist"), ("--title", "title"), ("--url", "url")):
+    for flag, key in (("--artist", "artist"), ("--title", "title"), ("--album", "album"), ("--url", "url")):
         if job.get(key):
             cmd += [flag, job[key]]
+    if job.get("duration"):
+        cmd += ["--duration", str(job["duration"])]
     env = dict(os.environ, PYTHONUNBUFFERED="1", SHEROFETCH_MUSIC_DIR=str(base))
     ACTIVE[jid] = {"query": job["query"], "started": time.time()}
     log("fetching", jid[:8], job["query"])
@@ -483,7 +486,8 @@ async def run_job(job: dict) -> None:
         if not tracks:
             await finish(jid, False, None, None, (result or {}).get("message") or "No songs found at that link.")
             return
-        rows = [{"query": t.get("query") or f"{t.get('artist', '')} - {t.get('title', '')}", "artist": t.get("artist"), "title": t.get("title"), "album": t.get("album")} for t in tracks]
+        rows = [{"query": t.get("query") or f"{t.get('artist', '')} - {t.get('title', '')}", "artist": t.get("artist"), "title": t.get("title"),
+                 "album": None if t.get("album") == "Official Studio Release" else t.get("album"), "duration": t.get("duration") or None} for t in tracks]
         n = await asyncio.to_thread(SUPA.rpc, "worker_add_children", p_id=WORKER_ID, p_parent=jid, p_tracks=rows)
         await finish(jid, True, {"tracks": n, "found": len(tracks), "name": (result or {}).get("playlist_name") or (result or {}).get("name")}, None, None)
         return
