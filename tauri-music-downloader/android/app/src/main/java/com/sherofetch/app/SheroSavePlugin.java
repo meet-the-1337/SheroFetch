@@ -3,6 +3,9 @@ package com.sherofetch.app;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Environment;
+import android.view.Window;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -26,6 +29,19 @@ import java.nio.charset.StandardCharsets;
 @CapacitorPlugin(name = "SheroSave")
 public class SheroSavePlugin extends Plugin {
     private static final String[] AUDIO = { ".flac", ".mp3", ".opus", ".ogg", ".m4a", ".wav" };
+
+    /** Dark icons on the light Crayon look, light icons on the dark Stage look. */
+    @PluginMethod
+    public void setBars(PluginCall call) {
+        boolean lightPage = call.getBoolean("light", true);
+        getActivity().runOnUiThread(() -> {
+            Window w = getActivity().getWindow();
+            WindowInsetsControllerCompat c = WindowCompat.getInsetsController(w, w.getDecorView());
+            c.setAppearanceLightStatusBars(lightPage);
+            c.setAppearanceLightNavigationBars(lightPage);
+            call.resolve();
+        });
+    }
 
     private File root() {
         return new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "SheroFetch");

@@ -56,6 +56,13 @@ export async function phoneSongs() {
 }
 
 export const localSrc = (path) => Capacitor.convertFileSrc(path)
+/** Status-bar icons follow the site look: dark on Crayon, light on Stage. */
+export function syncBars() {
+  if (!SheroSave) return
+  const apply = () => SheroSave.setBars({ light: document.documentElement.dataset.theme !== 'stage' }).catch(() => {})
+  apply()
+  addEventListener('sf-theme', apply)
+}
 export const writePhoneText = (path, text) => SheroSave?.writeText({ path, text })
 
 /** File name -> path of every song already in Music/SheroFetch (saved here, or fetched by this phone as a server). */

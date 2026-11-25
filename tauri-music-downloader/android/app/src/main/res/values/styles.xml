@@ -13,6 +13,8 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- dark status-bar icons until the page says which look it shows -->
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
 
