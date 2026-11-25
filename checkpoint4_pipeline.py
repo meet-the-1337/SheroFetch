@@ -2117,11 +2117,22 @@ def audit_album_folder(
                 pass
 
             artist_from_dir = folder.parent.name if folder.parent.name not in ["MusicDownloader", "Music", ""] else folder.name
-            clean_info = clean_track_entry(
-                raw_title=stem,
-                raw_artist=tag_artist or artist_from_dir,
-                album=tag_album or folder.name
-            )
+            known_artist = (tag_artist or "").strip()
+            if known_artist and stem.lower().startswith(known_artist.lower() + " - "):
+                # Already "Artist - Title": the rest is the title, even when it has its own " - "
+                # ("Song - Instrumental"), so it is not split a second time.
+                clean_info = clean_track_entry(
+                    raw_title=stem[len(known_artist) + 3:],
+                    raw_artist=known_artist,
+                    album=tag_album or folder.name,
+                    source="exact",
+                )
+            else:
+                clean_info = clean_track_entry(
+                    raw_title=stem,
+                    raw_artist=tag_artist or artist_from_dir,
+                    album=tag_album or folder.name
+                )
             clean_artist = clean_info["artist"]
             clean_title = clean_info["title"]
             clean_stem = f"{clean_artist} - {clean_title}"
@@ -2621,7 +2632,8 @@ def process_song(
             album=override_album or playlist_name or "Official Studio Release",
             code=code,
             direct_url=exact_url,
-            duration=expected_duration
+            duration=expected_duration,
+            source="exact",  # artist and title arrive already separated, so never split the title again
         )
         canonical_artist = cleaned_entry["artist"]
         track = cleaned_entry["title"]

@@ -254,13 +254,38 @@ def serve_file(job_id: str, e: int, s: str, dl: int = 0):
                         filename=entry.get("name") or p.name, content_disposition_type="attachment" if dl else "inline")
 
 
+def cover_thumb(cover: Path, w: int) -> Path:
+    """A small copy of the album art for lists (the original is often 1-2 MB). Made once, kept
+    in the state folder, rebuilt if the cover changes."""
+    thumbs = STATE_DIR / "thumbs"
+    thumbs.mkdir(exist_ok=True)
+    key = hashlib.sha1(f"{cover}|{cover.stat().st_mtime_ns}|{w}".encode()).hexdigest()[:20]
+    out = thumbs / f"{key}.jpg"
+    if not out.exists():
+        from PIL import Image
+
+        with Image.open(cover) as im:
+            im = im.convert("RGB")
+            im.thumbnail((w, w))
+            tmp = out.with_suffix(".tmp")
+            im.save(tmp, "JPEG", quality=82, optimize=True)
+            tmp.replace(out)
+    return out
+
+
 @app.get("/c/{job_id}")
-def serve_cover(job_id: str, e: int, s: str):
+def serve_cover(job_id: str, e: int, s: str, w: int = 0):
     entry = _check("c", job_id, e, s)
     cover = entry.get("cover")
     if not cover or not Path(cover).exists():
         raise HTTPException(404, "No cover art for this song.")
-    return FileResponse(cover, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    path = Path(cover)
+    if w:
+        try:
+            path = cover_thumb(path, max(64, min(800, w)))
+        except Exception as ex:  # noqa: BLE001  (no Pillow, or a broken image: send the original)
+            log("thumbnail failed:", ex)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=604800"})
 
 
 # ----------------------------------------------------------------------------- tunnel
@@ -306,7 +331,9 @@ class Tunnel(threading.Thread):
                             log("named tunnel up:", TUNNEL_PUBLIC_URL)
                         continue
                     m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
-                    if m and m.group(0) != self.url:
+                    # cloudflared also prints its own API address when it cannot reach it (no signal);
+                    # that is not this machine's tunnel.
+                    if m and m.group(0) != self.url and m.group(0) != "https://api.trycloudflare.com":
                         self._announce(m.group(0))
                         log("tunnel up:", self.url)
                 self.proc.wait()
@@ -465,7 +492,7 @@ STAGES = [
     (re.compile(r"\[PATH\]"), "Making room in the library", 0.2),
     (re.compile(r"\[SKIP\]"), "Already had this one", 0.9),
     (re.compile(r"\[DOWNLOAD\] Initiating"), "Fetching", 0.24),
-    (re.compile(r"\[TIER 1"), "Asking Soulseek for a lossless copy", 0.3),
+    (re.compile(r"\[TIER 1"), "Asking Soulseek for a clean rip", 0.3),
     (re.compile(r"\[TIER 2"), "Converting YouTube audio to FLAC", 0.5),
     (re.compile(r"\[TIER 3"), "Pulling the audio from YouTube", 0.5),
     (re.compile(r"\[TIER 4"), "Trying a backup audio stream", 0.6),

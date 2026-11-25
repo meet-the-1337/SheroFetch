@@ -74,7 +74,10 @@ const load = (src) => new Promise((resolve, reject) => {
   img.src = src
 })
 
-export const artProxy = (url) => `/api/art?u=${encodeURIComponent(url)}`
+import { apiUrl } from './native.js'
+
+// In the Android app the page is served from the phone, so the proxy needs the site's full address.
+export const artProxy = (url) => apiUrl(`/api/art?u=${encodeURIComponent(url)}`)
 
 // Returns a data URL of the crayon version, or the plain proxied art when WebGL is unavailable.
 export function crayonize(url, seed = 1) {

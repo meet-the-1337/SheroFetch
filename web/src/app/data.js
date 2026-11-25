@@ -33,17 +33,29 @@ export function useSession(online = true) {
     const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => data.subscription.unsubscribe()
   }, [])
+  const [retry, setRetry] = useState(0)
   useEffect(() => {
     if (!session) { setProfile(null); return }
-    setProfileError(false)
     supabase.from('profiles').select('id, username, role, disabled, daily_limit').eq('id', session.user.id).single()
       .then(({ data, error }) => {
         if (error || !data) throw error || new Error('no profile')
         setProfile(data)
+        setProfileError(false)
         try { localStorage.setItem(PROFILE_KEY, JSON.stringify(data)) } catch { /* storage off */ }
       })
       .catch(() => setProfileError(true))
-  }, [session, online])
+  }, [session, online, retry])
+  // Phones do not always fire "online" when the signal comes back (airplane mode off, Wi-Fi
+  // rejoining), so while the server cannot be reached, try again every few seconds and on return.
+  useEffect(() => {
+    if (!profileError) return
+    const again = () => setRetry((n) => n + 1)
+    const t = setInterval(again, 6000)
+    const back = () => { if (!document.hidden) again() }
+    document.addEventListener('visibilitychange', back)
+    addEventListener('online', again)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); removeEventListener('online', again) }
+  }, [profileError])
   const cachedProfile = () => { try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null') } catch { return null } }
   return { session, profile, profileError, cachedProfile }
 }
@@ -75,8 +87,14 @@ export function useJobs(userId) {
         })
       })
       .subscribe()
-    const t = setInterval(load, 60000)
-    return () => { supabase.removeChannel(ch); clearInterval(t) }
+    // Live updates keep the list current. A full reload only happens when the app comes back to
+    // the screen or back online (when updates may have been missed), plus a slow safety net:
+    // reloading every minute cost about 25 MB an hour of database traffic per open app.
+    const back = () => { if (!document.hidden) load() }
+    document.addEventListener('visibilitychange', back)
+    addEventListener('online', load)
+    const t = setInterval(load, 15 * 60000)
+    return () => { supabase.removeChannel(ch); clearInterval(t); document.removeEventListener('visibilitychange', back); removeEventListener('online', load) }
   }, [userId, load])
   return { jobs, state, reload: load }
 }
@@ -102,6 +120,9 @@ export function fileUrl(job, links, kind = 'file', download = false) {
   if (!path || !m?.public_url || !m.online) return null
   return `${m.public_url}${path}${download ? '&dl=1' : ''}`
 }
+
+/** A small cover for lists, about 200 px, instead of the 1-2 MB original. */
+export const thumbUrl = (job, links) => { const u = fileUrl(job, links, 'cover'); return u && `${u}&w=200` }
 
 export const machineName = (id) => (id === 'worker_phone' ? 'phone' : id === 'worker_pc' ? 'PC' : 'machine')
 export const fmtTime = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '')

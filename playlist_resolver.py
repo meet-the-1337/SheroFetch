@@ -83,7 +83,10 @@ def clean_track_entry(
                 a = parts[-1]
 
     # 5. Handle " - " (Artist - Title, Title - Artist, TrackNo - Title - Artist, Uploader - TrackNo - Title - Artist)
-    if " - " in t:
+    # Catalogues (Spotify, Apple Music, JioSaavn), and callers passing an exact artist, give the artist separately, and a " - " in their
+    # titles is a version ("Song - Slowed", "Song - Remastered 2011"), never "Artist - Title".
+    trusted_artist = source in ("spotify", "apple", "saavn", "exact") and a and a != "Unknown Artist"
+    if " - " in t and not trusted_artist:
         parts = [p.strip() for p in t.split(" - ") if p.strip()]
         
         # Filter out standalone track number tokens (e.g. '01', '1', '02', etc.)
@@ -105,20 +108,24 @@ def clean_track_entry(
             uploader_matches_p1 = bool(a and (a.lower() in p1.lower() or p1.lower() in a.lower()))
             uploader_matches_p2 = bool(a and (a.lower() in p2.lower() or p2.lower() in a.lower()))
 
-            if pos2 != -1 and (pos1 == -1 or pos2 < pos1):
-                # p2 comes first in album title or is the artist token in album title (e.g. Born To Die - Lana Del Rey)
-                a = p2
-                t = p1
-            elif pos1 != -1 and (pos2 == -1 or pos1 < pos2):
-                # p1 comes first in album title (e.g. Lana Del Rey - Born To Die)
-                a = p1
-                t = p2
-            elif uploader_matches_p1 and not is_vevo_or_topic:
+            if uploader_matches_p1 and not is_vevo_or_topic:
                 a = p1
                 t = p2
             elif uploader_matches_p2 and not is_vevo_or_topic:
                 a = p2
                 t = p1
+            elif " - " in alb_clean and pos2 != -1 and (pos1 == -1 or pos2 < pos1):
+                # Compound album format, e.g. "Born To Die - Lana Del Rey" where artist token appears second
+                a = p2
+                t = p1
+            elif " - " in alb_clean and pos1 != -1 and (pos2 == -1 or pos1 < pos2):
+                # Compound album format, e.g. "Lana Del Rey - Born To Die" where artist token appears first
+                a = p1
+                t = p2
+            elif alb_clean and (p2.lower() == alb_clean or alb_clean in p2.lower()):
+                # Single or self-titled release where album matches song title, standard Artist - Title
+                a = p1
+                t = p2
             elif not a or a == "Unknown Artist" or not is_vevo_or_topic:
                 # Default: Standard "Artist - Title"
                 a = p1

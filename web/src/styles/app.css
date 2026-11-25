@@ -204,3 +204,111 @@ progress::-moz-progress-bar { background: var(--color-accent); }
 .looks button[aria-pressed="true"] { background: var(--color-ink); color: var(--color-paper); }
 .looks button:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
 [data-theme="stage"] h1 { font-weight: 700; letter-spacing: var(--tracking-display); }
+
+/* ---------------------------------------------------------------- phone screens: insets and tab bar */
+:root {
+  --inset-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --tabbar-h: 0px;
+}
+.bar { padding-top: var(--inset-top); }
+.center, .auth { padding-top: calc(var(--space-xl) + var(--inset-top)); padding-bottom: calc(var(--space-xl) + var(--inset-bottom)); }
+.player { bottom: var(--tabbar-h); padding-bottom: var(--inset-bottom); }
+.picker__bar { bottom: var(--tabbar-h); }
+.toasts { position: fixed; left: 50%; top: calc(var(--inset-top) + 76px); z-index: var(--z-toast); display: grid; gap: var(--space-xs); width: min(92vw, 26rem); transform: translateX(-50%); pointer-events: none; }
+.toast { margin: 0; padding: var(--space-sm) var(--space-md); border: var(--line-crayon) solid var(--color-ink); border-radius: var(--radius-card); background: var(--color-field); color: var(--color-field-ink); font-weight: 700; animation: toast-in 3.6s var(--ease-out) both; }
+
+@media (max-width: 48rem) {
+  :root { --tabbar-h: calc(64px + var(--inset-bottom)); }
+  .bar { flex-wrap: nowrap; min-height: calc(56px + var(--inset-top)); gap: var(--space-sm); padding-inline: var(--space-md); }
+  .who { width: auto; margin-left: auto; gap: var(--space-xs); justify-content: flex-end; }
+  .who .muted { display: none; }
+  .who .btn { min-height: 34px; padding: 0 var(--space-sm); }
+  .who .link { font-size: var(--text-xs); }
+  .tabs { position: fixed; inset: auto 0 0 0; z-index: var(--z-sticky-nav); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; height: var(--tabbar-h); padding: 6px var(--space-xs) calc(6px + var(--inset-bottom)); background: var(--color-paper); border-top: var(--line-crayon) solid var(--color-ink); }
+  .tabs button { justify-content: center; min-height: 52px; padding: 0 var(--space-2xs); font-size: var(--text-sm); }
+  .view { padding-bottom: calc(var(--tabbar-h) + var(--space-4xl)); }
+  .player { padding-bottom: 0; }
+  .player__bar { padding-inline: var(--space-md); }
+}
+
+/* ---------------------------------------------------------------- motion */
+@keyframes view-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes row-in { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes pop { 0% { transform: scale(0.4); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
+@keyframes stripes { to { background-position: 28px 0; } }
+@keyframes slide-up { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes toast-in { 0% { opacity: 0; transform: translateY(-16px) scale(0.96); } 8%, 86% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-8px); } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+
+.view > section { animation: view-in var(--dur-long) var(--ease-out) both; }
+.rows > li, .hits > li, .picklist > li, .devlist > li, .plcard { animation: row-in 380ms var(--ease-out) both; }
+.rows > li:nth-child(2), .hits > li:nth-child(2) { animation-delay: 40ms; }
+.rows > li:nth-child(3), .hits > li:nth-child(3) { animation-delay: 80ms; }
+.rows > li:nth-child(4), .hits > li:nth-child(4) { animation-delay: 120ms; }
+.rows > li:nth-child(5), .hits > li:nth-child(5) { animation-delay: 160ms; }
+.rows > li:nth-child(6), .hits > li:nth-child(6) { animation-delay: 200ms; }
+.rows > li:nth-child(n+7), .hits > li:nth-child(n+7) { animation-delay: 240ms; }
+.count { animation: pop 420ms var(--ease-spring) both; }
+.tabs button { transition: background-color var(--dur-short) var(--ease-out), transform var(--dur-micro) var(--ease-out); }
+.tabs button:active, .btn:active, .chips button:active, .looks button:active, .switch:active { transform: scale(0.95); }
+.tabs button[aria-current="page"] { animation: pop 300ms var(--ease-spring); }
+.btn--primary:not(:disabled):hover { transform: translateY(-2px); }
+/* a running song: moving crayon stripes on its bar, and its stage text bobs */
+.row--running progress::-webkit-progress-value {
+  background: repeating-linear-gradient(-45deg, var(--color-accent) 0 8px, color-mix(in oklab, var(--color-accent) 65%, var(--color-paper)) 8px 14px);
+  background-size: 28px 100%; animation: stripes 0.7s linear infinite; transition: width 600ms var(--ease-out);
+}
+.row--running .row__state > span:first-child { display: inline-block; animation: bob 1.2s var(--ease-in-out) infinite; }
+.player { animation: slide-up 380ms var(--ease-out) both; }
+.lyrics p { transition: color var(--dur-short) var(--ease-out), font-size var(--dur-long) var(--ease-out), transform var(--dur-long) var(--ease-out); }
+.lyrics p[aria-current="true"] { transform: scale(1.02); }
+.hits img, .cover { transition: transform var(--dur-short) var(--ease-out); }
+.hits li:active img { transform: scale(0.94) rotate(-2deg); }
+.field { transition: outline-color var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
+.field:focus-visible { box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-focus) 18%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .view > section, .rows > li, .hits > li, .picklist > li, .devlist > li, .plcard, .count, .player, .tabs button[aria-current="page"],
+  .row--running .row__state > span:first-child, .row--running progress::-webkit-progress-value { animation: none; }
+  .toast { animation: none; }
+  .tabs button:active, .btn:active { transform: none; }
+}
+@media (max-width: 48rem) {
+  .bar .wordmark { font-size: var(--text-lg); }
+  .who .link { display: none; }
+  .looks button { min-height: 30px; padding: 0 var(--space-xs); }
+}
+/* long names and links wrap instead of pushing the page wider than the screen */
+.view h1, .plcard h2, .row__main b, .failhelp p { overflow-wrap: anywhere; min-width: 0; }
+.view, .view > section, .plcard, .rows, .row > * { min-width: 0; }
+.row .btn, .failhelp .btn { white-space: normal; text-align: center; line-height: 1.2; padding-block: var(--space-2xs); }
+.kb-open .tabs { display: none; }
+@media (max-width: 48rem) {
+  .view h1 { font-size: var(--text-2xl); }
+  .plcard { padding: var(--space-md); }
+  .fetchview h1 { font-size: var(--text-3xl); }
+}
+@media (max-width: 48rem) {
+  /* library rows on a phone: cover beside the title, details under it, two big buttons */
+  .row--done { grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "cover main main" "state state state" "play play save"; row-gap: var(--space-xs); }
+  .row--done > .cover { grid-area: cover; width: 56px; height: 56px; }
+  .row--done > .row__main { grid-area: main; align-self: center; }
+  .row--done > .row__state { grid-area: state; }
+  .row--done > .act-play { grid-area: play; }
+  .row--done > .act-save { grid-area: save; }
+  /* queue rows: status and format share a line */
+  .row:not(.row--done) .fmt { justify-self: start; }
+}
+.switch.is-on { flex-direction: row-reverse; padding: 0 var(--space-2xs) 0 var(--space-sm); }
+
+/* ---------- phones held sideways: short screens keep the list in view ---------- */
+@media (orientation: landscape) and (max-height: 32rem) {
+  .lyrics { max-height: 20svh; padding-block: var(--space-2xs); }
+  .lyrics p { font-size: var(--text-base); padding-block: 0; }
+  .lyrics p[aria-current="true"] { font-size: var(--text-lg); }
+  /* Some phones report no top inset when sideways, though the status bar still shows. */
+  .bar { padding-block: max(var(--inset-top), 1.75rem) var(--space-2xs); }
+  .view h1, .center h1 { font-size: var(--text-2xl); }
+  .shell, .center, .player__bar { padding-left: max(var(--space-md), env(safe-area-inset-left)); padding-right: max(var(--space-md), env(safe-area-inset-right)); }
+}

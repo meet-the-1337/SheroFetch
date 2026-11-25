@@ -4,6 +4,15 @@ import { isNative, safeName } from '../lib/native.js'
 import { canPickFolder, saveMany, downloadEach } from '../lib/savepc.js'
 import { explainFailure, ytSearch, ytMusicSearch, YT_LINK, cleanYt, fileUrl, fmtTime, machineName } from './data.js'
 
+// A playlist without a name gets a readable label from its link instead of the raw address.
+function playlistLabel(link) {
+  try {
+    const h = new URL(link).hostname
+    const where = /spotify/.test(h) ? 'Spotify' : /youtube|youtu\.be/.test(h) ? 'YouTube' : /apple/.test(h) ? 'Apple Music' : /jiosaavn/.test(h) ? 'JioSaavn' : h.replace(/^www\./, '')
+    return `${where} playlist`
+  } catch { return 'Playlist' }
+}
+
 /** Playlists with their songs: [{ parent, kids, name }], newest first. */
 export function usePlaylists(jobs) {
   return useMemo(() => {
@@ -11,7 +20,7 @@ export function usePlaylists(jobs) {
     for (const j of jobs) if (j.parent_id) (kids.get(j.parent_id) || kids.set(j.parent_id, []).get(j.parent_id)).push(j)
     return jobs.filter((j) => j.kind === 'playlist').map((parent) => {
       const list = (kids.get(parent.id) || []).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      return { parent, kids: list, name: parent.result?.name || parent.query }
+      return { parent, kids: list, name: parent.result?.name || playlistLabel(parent.query) }
     })
   }, [jobs])
 }

@@ -2,29 +2,34 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase, rpc, emailFor, explainAuthError } from '../lib/supabase.js'
 import { hasBackend, FORMATS, savedFormat, saveFormat, PLAYLIST_RE } from '../lib/config.js'
 import { crayonize } from '../lib/covers.js'
-import { useSession, useJobs, useMachineLinks, useOnline, fileUrl, machineName, fmtTime, parseLrc, loadLrc, explainFailure } from './data.js'
+import { useSession, useJobs, useMachineLinks, useOnline, fileUrl, thumbUrl, machineName, fmtTime, parseLrc, loadLrc, explainFailure } from './data.js'
 import { usePlaylists, PlaylistCard, FailHelp, SavePicker } from './lists.jsx'
 import { Devices, DeviceChoice, deviceChoiceMade, useMyDevices } from './devices.jsx'
 import { THEMES, getTheme, setTheme } from '../lib/theme.js'
-import { isNative, apiUrl, siteUrl, saveToPhone, savedPath, localSrc, phoneSongs, phoneIndex, audioName, readLocalText, outbox, setOutbox, addToOutbox } from '../lib/native.js'
+import { isNative, apiUrl, siteUrl, saveToPhone, savedPath, localSrc, phoneSongs, phoneIndex, audioName, readLocalText, outbox, setOutbox, addToOutbox, mirrorMedia, localArt } from '../lib/native.js'
 
 const TABS = [['fetch', 'Fetch'], ['queue', 'Queue'], ['library', 'Library'], ['devices', 'Devices']]
 
 export function App() {
   const online = useOnline()
   const { session, profile, profileError, cachedProfile } = useSession(online)
+  const [localOnly, setLocalOnly] = useState(false)
   if (!hasBackend) return <Center><p>This copy of SheroFetch is not connected to its server yet.</p></Center>
   if (session === undefined) return <Center><p className="muted">Opening Shero’s kennel…</p></Center>
   // In the Android app nothing here needs a signal: with no connection, or no answer from the
   // server, it opens on the songs already on the phone and keeps new requests until it is back.
+  if (isNative && !session && localOnly) return <Offline profile={null} signedIn={false} onBack={() => setLocalOnly(false)} />
   if (isNative && (!online || profileError)) return <Offline profile={profile || cachedProfile()} signedIn={Boolean(session)} />
-  if (!session) return <Auth />
+  if (!session) return <Auth onPhoneSongs={isNative ? () => setLocalOnly(true) : null} />
   if (profileError) return <Center><p>Cannot reach Shero’s server right now. Check your connection and reload.</p></Center>
   if (!profile) return <Center><p className="muted">Loading your account…</p></Center>
   if (profile.disabled) return <Center><p>Your account is paused. Ask the owner to switch it back on.</p><SignOut /></Center>
   if (profile.role === 'worker') return <Center><p>This is a machine account; it cannot use the app.</p><SignOut /></Center>
   return <Shell profile={profile} />
 }
+
+// Album names the resolver or tagger uses when the real album is not known.
+const PLACEHOLDER_ALBUMS = ['Unknown Album', 'SheroFetch', 'Official Studio Release']
 
 function Center({ children }) {
   return <main className="center"><a className="wordmark" href={siteUrl('/')}>SheroFetch</a>{children}</main>
@@ -46,7 +51,7 @@ function SignOut() {
 
 /* ------------------------------------------------------------------ sign in and join */
 
-function Auth() {
+function Auth({ onPhoneSongs }) {
   const [mode, setMode] = useState(location.hash === '#join' ? 'join' : 'signin')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -102,6 +107,7 @@ function Auth() {
         <button className="btn btn--primary" type="submit" disabled={busy} aria-busy={busy}>{busy ? 'One moment…' : mode === 'join' ? 'Create my account' : 'Sign in'}</button>
       </form>
       <p className="muted small">No email needed. If you forget your password, the owner can reset it.</p>
+      {onPhoneSongs && <button className="btn btn--ghost" type="button" onClick={onPhoneSongs}>Play songs already on this phone</button>}
     </main>
   )
 }
@@ -113,9 +119,32 @@ function Shell({ profile }) {
   const { jobs, state } = useJobs(profile.id)
   const links = useMachineLinks()
   const [playing, setPlaying] = useState(null)
-  const go = (t) => { setTab(t); history.replaceState(null, '', `#${t}`) }
+  // Each tab is a history step, so the phone's back button returns to the previous tab before
+  // it leaves the app.
+  const go = (t) => { if (t !== tab) history.pushState(null, '', `#${t}`); setTab(t); scrollTo({ top: 0 }) }
+  useEffect(() => {
+    const back = () => { const h = location.hash.slice(1); setTab(['queue', 'library', 'devices'].includes(h) ? h : 'fetch'); scrollTo({ top: 0 }) }
+    addEventListener('popstate', back)
+    return () => removeEventListener('popstate', back)
+  }, [])
   const running = jobs.filter((j) => j.status === 'running' || j.status === 'queued').length
   const [held, setHeld] = useState(() => outbox().length)
+  // "Mil gaya!" toast whenever one of my songs finishes while the app is open.
+  const [toasts, setToasts] = useState([])
+  const seen = useRef(null)
+  useEffect(() => {
+    const now = new Map(jobs.map((j) => [j.id, j.status]))
+    if (seen.current) {
+      for (const j of jobs) {
+        if (j.kind === 'track' && j.status === 'done' && seen.current.get(j.id) && seen.current.get(j.id) !== 'done') {
+          const id = `${j.id}-${Date.now()}`
+          setToasts((t) => [...t.slice(-2), { id, text: `Mil gaya! ${j.result?.track || j.title || ''}` }])
+          setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3600)
+        }
+      }
+    }
+    seen.current = now
+  }, [jobs])
 
   // Requests made with no signal go into the queue as soon as the server answers again.
   useEffect(() => {
@@ -144,7 +173,7 @@ function Shell({ profile }) {
         <nav className="tabs" aria-label="Sections">
           {TABS.map(([id, label]) => (
             <button key={id} type="button" aria-current={tab === id ? 'page' : undefined} onClick={() => go(id)}>
-              {label}{id === 'queue' && running > 0 && <span className="count">{running}</span>}
+              {label}{id === 'queue' && running > 0 && <span key={running} className="count">{running}</span>}
             </button>
           ))}
         </nav>
@@ -155,13 +184,14 @@ function Shell({ profile }) {
           <SignOut />
         </div>
       </header>
-      <main className={`view view--${tab}`}>
+      <main key={tab} className={`view view--${tab}`}>
         {tab === 'fetch' && <Fetch profile={profile} onQueued={() => go('queue')} onSetup={() => go('devices')} />}
         {tab === 'devices' && <Devices />}
         {tab === 'queue' && <Queue jobs={jobs} state={state} held={held} />}
         {tab === 'library' && <Library jobs={jobs} state={state} links={links} onPlay={setPlaying} playing={playing} />}
       </main>
       {playing && <Player job={playing} links={links} onClose={() => setPlaying(null)} />}
+      <div className="toasts" aria-live="polite">{toasts.map((t) => <p key={t.id} className="toast">{t.text}</p>)}</div>
     </div>
   )
 }
@@ -242,6 +272,18 @@ function Fetch({ profile, onQueued, onSetup }) {
         <input id="appq" className="field" type="search" autoComplete="off" spellCheck="false" placeholder="Song, artist, or a Spotify or YouTube link" value={q} onChange={(e) => setQ(e.target.value)} />
         <button className="btn btn--primary" type="submit" disabled={busy || (!isLink && !results.length)}>{isLink ? 'Fetch every song' : 'Shero, gaana le aa!'}</button>
       </form>
+      {results.length > 0 && (
+        <ul className="hits">
+          {results.map((r) => (
+            <li key={`${r.artist}|${r.title}`}>
+              <img src={covers[r.art] || ''} alt="" width="56" height="56" />
+              <div><b>{r.title}</b><span>{r.artist}{r.album ? `, ${r.album}` : ''}</span></div>
+              <time>{fmtTime(r.duration)}</time>
+              <button className="btn btn--quiet" type="button" disabled={busy} onClick={() => queue({ query: `${r.artist} - ${r.title}`, ...r })}>Fetch</button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="options">
         <fieldset className="seg">
           <legend>Format</legend>
@@ -260,18 +302,6 @@ function Fetch({ profile, onQueued, onSetup }) {
         {!hasDevice && devices && profile.role !== 'owner' && <button className="link" type="button" onClick={onSetup}>Fetch on my own device instead</button>}
       </div>
       <p className="help" aria-live="polite">{sendTo === 'mine' && !mineOnline ? 'Your device is offline. Songs wait in the queue until it is back.' : isLink ? (sendTo === 'mine' ? 'A link. Your device will fetch every song in it.' : 'A link. Shero fetches as many songs as today’s limit allows; the rest wait for tomorrow.') : msg || FORMATS[format].note}</p>
-      {results.length > 0 && (
-        <ul className="hits">
-          {results.map((r) => (
-            <li key={`${r.artist}|${r.title}`}>
-              <img src={covers[r.art] || ''} alt="" width="56" height="56" />
-              <div><b>{r.title}</b><span>{r.artist}{r.album ? `, ${r.album}` : ''}</span></div>
-              <time>{fmtTime(r.duration)}</time>
-              <button className="btn btn--quiet" type="button" disabled={busy} onClick={() => queue({ query: `${r.artist} - ${r.title}`, ...r })}>Fetch</button>
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   )
 }
@@ -383,13 +413,13 @@ function Library({ jobs, state, links, onPlay, playing }) {
         {shown.map((j) => {
           const local = isNative ? savedPath(j.id) || onPhone.get(audioName(j.result || {})) || null : null
           const src = local ? localSrc(local) : fileUrl(j, links)
-          const cover = fileUrl(j, links, 'cover')
+          const cover = thumbUrl(j, links)
           const r = j.result || {}
           const s = saving[j.id]
           return (
             <li key={j.id} className={`row row--done${playing?.id === j.id ? ' is-playing' : ''}`}>
-              {cover ? <img className="cover" src={cover} alt="" width="48" height="48" loading="lazy" /> : <span className="cover cover--none" aria-hidden="true" />}
-              <div className="row__main"><b>{r.track}</b><span>{r.artist}{r.album ? `, ${r.album}` : ''}</span></div>
+              <Cover remote={cover} path={local} />
+              <div className="row__main"><b>{r.track}</b><span>{r.artist}{r.album && !PLACEHOLDER_ALBUMS.includes(r.album) ? `, ${r.album}` : ''}</span></div>
               <div className="row__state">
                 <span>{r.ext?.toUpperCase()} {r.size_mb ? `${r.size_mb} MB` : ''}{r.ext === 'flac' && !r.lossless_source ? ', converted' : ''}</span>
                 {!src && <span className="muted">The {machineName(j.worker_id)} holding it is asleep</span>}
@@ -398,10 +428,10 @@ function Library({ jobs, state, links, onPlay, playing }) {
                 {typeof s === 'number' && <progress max="100" value={Math.round(s * 100)} aria-label={`Saving, ${Math.round(s * 100)} percent`} />}
                 {typeof s === 'string' && <span role="alert">Could not save: {s}</span>}
               </div>
-              <button className="btn btn--quiet" type="button" disabled={!src} onClick={() => onPlay(local ? { ...j, localSrc: src } : j)}>Play</button>
+              <button className="btn btn--quiet act-play" type="button" disabled={!src} onClick={() => onPlay(local ? { ...j, localSrc: src, localPath: local } : j)}>Play</button>
               {isNative
-                ? <button className="btn btn--quiet" type="button" disabled={!fileUrl(j, links) || typeof s === 'number'} onClick={() => toPhone(j)}>{local ? 'Save again' : typeof s === 'number' ? 'Saving…' : 'Save to phone'}</button>
-                : <a className={`btn btn--quiet${src ? '' : ' is-off'}`} aria-disabled={!src} href={src ? fileUrl(j, links, 'file', true) : undefined}>Save</a>}
+                ? <button className="btn btn--quiet act-save" type="button" disabled={!fileUrl(j, links) || typeof s === 'number'} onClick={() => toPhone(j)}>{local ? 'Save again' : typeof s === 'number' ? 'Saving…' : 'Save to phone'}</button>
+                : <a className={`btn btn--quiet act-save${src ? '' : ' is-off'}`} aria-disabled={!src} href={src ? fileUrl(j, links, 'file', true) : undefined}>Save</a>}
               <button className="btn btn--ghost" type="button" aria-label={`Remove ${r.track} from this list`} onClick={() => rpc('forget_job', { p_job: j.id })}>Remove</button>
             </li>
           )
@@ -427,6 +457,20 @@ function Player({ job, links, onClose }) {
   const src = job.localSrc || fileUrl(job, links)
 
   useEffect(() => { audio.current?.play().catch(() => {}) }, [job.id])
+  // Lock screen, notification shade and headset buttons.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => {
+    const el = audio.current
+    if (!el) return undefined
+    return mirrorMedia(el, { title: job.result?.track, artist: job.result?.artist, art: job.localPath ? null : thumbUrl(job, links), file: job.localPath }, {
+      play: () => el.play().catch(() => {}),
+      pause: () => el.pause(),
+      stop: () => { el.pause(); closeRef.current() },
+      seek: (pos) => { if (Number.isFinite(pos)) el.currentTime = pos },
+      next: () => {}, previous: () => { el.currentTime = 0 },
+    })
+  }, [job.id, src]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const el = lyricsRef.current?.querySelector('[aria-current="true"]')
     el?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
@@ -456,19 +500,41 @@ function Player({ job, links, onClose }) {
   )
 }
 
+/** A song's cover: the machine's thumbnail, else the art inside the file on this phone, loaded once in view. */
+function Cover({ remote, path }) {
+  const ref = useRef(null)
+  const [src, setSrc] = useState(remote || null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setSrc(remote || null); setFailed(false) }, [remote])
+  useEffect(() => {
+    if ((src && !failed) || !path || !isNative) return undefined
+    let live = true
+    const io = new IntersectionObserver((es) => {
+      if (!es.some((e) => e.isIntersecting)) return
+      io.disconnect()
+      localArt(path).then((a) => { if (live && a) { setSrc(a); setFailed(false) } })
+    }, { rootMargin: '300px' })
+    if (ref.current) io.observe(ref.current)
+    return () => { live = false; io.disconnect() }
+  }, [src, failed, path])
+  if (!src || failed) return <span ref={ref} className="cover cover--none" aria-hidden="true" />
+  return <img className="cover" src={src} alt="" width="48" height="48" loading="lazy" onError={() => { if (src !== remote || !path) setSrc(null); setFailed(true) }} />
+}
+
 /* ------------------------------------------------------------------ the app with no signal */
 
-function Offline({ profile, signedIn }) {
+function Offline({ profile, signedIn, onBack }) {
   const [songs, setSongs] = useState(null)
   const [playing, setPlaying] = useState(null)
   const [q, setQ] = useState('')
   const [msg, setMsg] = useState('')
   const [held, setHeld] = useState(() => outbox().length)
+  const [find, setFind] = useState('')
   useEffect(() => { phoneSongs().then(setSongs).catch(() => setSongs([])) }, [])
 
   async function play(song) {
     const lrc = song.lrc ? await readLocalText(song.lrc) : null
-    setPlaying({ id: song.path, localSrc: song.src, lrc, result: { track: song.track, artist: song.artist } })
+    setPlaying({ id: song.path, localSrc: song.src, localPath: song.path, lrc, result: { track: song.track, artist: song.artist } })
   }
   function hold(e) {
     e.preventDefault()
@@ -490,8 +556,9 @@ function Offline({ profile, signedIn }) {
       </header>
       <main className="view view--library">
         <section aria-labelledby="off-title">
-          <h1 id="off-title">No signal, so Shero plays what is on this phone</h1>
-          <p className="muted">The queue and your machines come back by themselves when the connection does.</p>
+          <h1 id="off-title">{onBack ? 'Songs on this phone' : 'No signal, so Shero plays what is on this phone'}</h1>
+          {onBack ? <p><button className="btn btn--quiet" type="button" onClick={onBack}>Back to sign in</button></p>
+            : <p className="muted">The queue and your machines come back by themselves when the connection does.</p>}
           {signedIn && (
             <form className="searchrow" onSubmit={hold}>
               <label className="visually-hidden" htmlFor="offq">Song to fetch later, as Artist - Title, or a playlist link</label>
@@ -502,11 +569,12 @@ function Offline({ profile, signedIn }) {
           <p className="help" aria-live="polite">{msg || (held ? `${held} ${held === 1 ? 'song is' : 'songs are'} waiting to be asked for.` : '')}</p>
           {songs === null && <p className="muted">Looking in Music/SheroFetch…</p>}
           {songs?.length === 0 && <p className="muted">No songs saved on this phone yet. Use Save to phone in the library when you are online.</p>}
+          {songs?.length > 12 && <input className="field field--small" type="search" placeholder={`Filter ${songs.length} songs`} aria-label="Filter the songs on this phone" value={find} onChange={(e) => setFind(e.target.value)} />}
           <ol className="rows">
-            {(songs || []).map((s) => (
+            {(songs || []).filter((s) => !find || `${s.track} ${s.artist} ${s.album}`.toLowerCase().includes(find.toLowerCase())).slice(0, 300).map((s) => (
               <li key={s.path} className={`row row--done${playing?.id === s.path ? ' is-playing' : ''}`}>
-                {s.art ? <img className="cover" src={s.art} alt="" width="48" height="48" loading="lazy" /> : <span className="cover cover--none" aria-hidden="true" />}
-                <div className="row__main"><b>{s.track}</b><span>{s.artist}{s.album && s.album !== 'Unknown Album' ? `, ${s.album}` : ''}</span></div>
+                <Cover remote={s.art} path={s.path} />
+                <div className="row__main"><b>{s.track}</b><span>{[s.artist, s.album && !PLACEHOLDER_ALBUMS.includes(s.album) ? s.album : ''].filter(Boolean).join(', ') || s.ext.toUpperCase()}</span></div>
                 <div className="row__state"><span>{s.ext.toUpperCase()} {(s.bytes / 1048576).toFixed(1)} MB</span></div>
                 <button className="btn btn--quiet" type="button" onClick={() => play(s)}>Play</button>
               </li>

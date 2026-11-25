@@ -82,12 +82,15 @@ function relevance(item, q) {
 }
 
 export default async function handler(req, res) {
+  res.setHeader('access-control-allow-origin', '*') // the Android app calls this from its own origin
   const q = clean(req.query?.q).slice(0, 120)
   if (q.length < 2) return res.status(200).json({ results: [] })
   const country = /^[a-z]{2}$/i.test(req.query?.country || '') ? req.query.country : 'IN'
   const settled = await Promise.allSettled([itunes(q, country), deezer(q), jiosaavn(q)])
   const list = settled.flatMap((s) => (s.status === 'fulfilled' ? s.value : []))
-  if (!list.length) return res.status(502).json({ results: [], error: 'Search is not answering right now.' })
+  // "Not answering" only when every catalogue failed; an empty answer is just no match.
+  if (!list.length && settled.every((x) => x.status === 'rejected')) return res.status(502).json({ results: [], error: 'Search is not answering right now.' })
+  if (!list.length) return res.status(200).json({ results: [] })
 
   // Merge the catalogues: same song, a shared artist, length within 6 seconds. JioSaavn lists the
   // composer and singer in any order, so artists are compared as sets, not by the first name.
