@@ -331,7 +331,8 @@ export function createYard(kit, palette) {
   const box = (w, h, d) => new THREE.BoxGeometry(w, h, d)
   const cream = kit.fill(mix(palette.paper, palette.yellow, 0.28))
   const wallGrey = kit.fill(mix(palette.paper, palette.muted, 0.32))
-  const roofMat = kit.fill(palette.blue)
+  const houseRoofMat = kit.fill(mix(palette.red, palette.yellow, 0.35))
+  const dogRoofMat = kit.fill(palette.blue)
   const red = kit.fill(palette.red)
   const yellow = kit.fill(palette.yellow)
   const wood = kit.fill(mix(palette.red, palette.yellow, 0.55))
@@ -350,9 +351,9 @@ export function createYard(kit, palette) {
   ground.position.y = 1.45
   const upper = kit.drawn(box(5.4, 2.5, 4.0), cream, { thick: 0.05 })
   upper.position.set(-0.6, 4.15, -0.1)
-  const roof = kit.drawn(gable(6.2, 1.5, 4.9), roofMat, { thick: 0.05 })
+  const roof = kit.drawn(gable(6.2, 1.5, 4.9), houseRoofMat, { thick: 0.05 })
   roof.position.set(-0.6, 5.4, -0.1)
-  const eave = kit.drawn(box(7.8, 0.22, 4.9), roofMat, { thick: 0.04 })
+  const eave = kit.drawn(box(7.8, 0.22, 4.9), houseRoofMat, { thick: 0.04 })
   eave.position.set(0, 2.98, 0)
   house.add(ground, upper, roof, eave)
   // Windows lit for the evening, and the front door.
@@ -564,7 +565,7 @@ export function createYard(kit, palette) {
   const dog = new THREE.Group()
   const dw = kit.drawn(box(2.0, 1.5, 1.9), red, { thick: 0.04 })
   dw.position.y = 0.75
-  const droof = kit.drawn(gable(2.4, 0.9, 2.5), roofMat, { thick: 0.04 })
+  const droof = kit.drawn(gable(2.4, 0.9, 2.5), dogRoofMat, { thick: 0.04 })
   droof.position.y = 1.5
   const hole = new THREE.Mesh(new THREE.CircleGeometry(0.46, 28, 0, Math.PI), ink)
   hole.position.set(0, 0.18, 0.96)
@@ -599,12 +600,91 @@ export function createYard(kit, palette) {
   dogShadow.position.set(-1.6, 0.003, -0.1)
   root.add(dogShadow)
 
-  // A round garden tree behind the wall, and crayon tufts on the yard.
+  // Round garden trees behind the wall and along the boundary.
   const trunk = kit.drawn(new THREE.CylinderGeometry(0.16, 0.22, 2.4, 8), wood, { thick: 0.03 })
   trunk.position.set(-5.6, 1.2, -5.2)
   const crown = kit.drawn(new THREE.SphereGeometry(1.5, 24, 16), kit.fill(mix(palette.blue, palette.yellow, 0.62), { fluff: 0.35, freq: 1.6, seed: 3 }), { thick: 0.05 })
   crown.position.set(-5.6, 3.3, -5.2)
   root.add(trunk, crown)
+
+  // Second garden tree near the carport
+  const trunk2 = kit.drawn(new THREE.CylinderGeometry(0.14, 0.18, 2.2, 8), wood, { thick: 0.025 })
+  trunk2.position.set(5.2, 1.1, -8.6)
+  const crown2 = kit.drawn(new THREE.SphereGeometry(1.2, 20, 14), kit.fill(mix(palette.blue, palette.yellow, 0.58), { fluff: 0.3, freq: 1.8, seed: 7 }), { thick: 0.04 })
+  crown2.position.set(5.2, 2.8, -8.6)
+  root.add(trunk2, crown2)
+
+  // Canonical Kasukabe Neighborhood:
+  // 1. Kitamoto-san's house to the left ("お隣の北本さん", iconic blue-tiled roof)
+  const neighborLeft = new THREE.Group()
+  const nLWall = kit.fill(mix(palette.paper, palette.yellow, 0.32))
+  const nLGround = kit.drawn(box(5.8, 2.8, 4.6), nLWall, { thick: 0.04 })
+  nLGround.position.y = 1.4
+  const nLUpper = kit.drawn(box(4.8, 2.4, 4.0), nLWall, { thick: 0.04 })
+  nLUpper.position.set(-0.2, 3.9, 0)
+  const nLRoofMesh = kit.drawn(gable(5.4, 1.4, 4.5), dogRoofMat, { thick: 0.04 })
+  nLRoofMesh.position.set(-0.2, 5.2, 0)
+  const nLEave = kit.drawn(box(6.2, 0.2, 4.8), dogRoofMat, { thick: 0.03 })
+  nLEave.position.set(0, 2.85, 0)
+  for (const [wx, wy] of [[-1.2, 3.9], [1.2, 3.9], [-1.4, 1.4], [1.4, 1.4]]) {
+    const wMesh = kit.drawn(box(0.9, 0.8, 0.06), yellow, { thick: 0.025 })
+    wMesh.position.set(wx, wy, 2.32)
+    neighborLeft.add(wMesh)
+  }
+  neighborLeft.add(nLGround, nLUpper, nLRoofMesh, nLEave)
+  neighborLeft.position.set(-11.5, 0, -11.0)
+  root.add(neighborLeft)
+
+  // Green garden hedge along Kitamoto-san's property boundary
+  const hedgeMat = kit.fill(mix(palette.blue, palette.yellow, 0.52), { fluff: 0.25, freq: 2.0 })
+  const hedgeLeft = kit.drawn(box(1.0, 1.5, 8.5), hedgeMat, { thick: 0.035 })
+  hedgeLeft.position.set(-7.8, 0.75, -8.0)
+  root.add(hedgeLeft)
+
+  // 2. Neighboring suburban house behind the carport to the right (greenish-teal roof)
+  const neighborRight = new THREE.Group()
+  const nRWall = kit.fill(mix(palette.paper, palette.yellow, 0.26))
+  const nRRoof = kit.fill(mix(palette.blue, palette.yellow, 0.42))
+  const nRGround = kit.drawn(box(6.0, 2.8, 4.6), nRWall, { thick: 0.04 })
+  nRGround.position.y = 1.4
+  const nRUpper = kit.drawn(box(5.0, 2.3, 4.0), nRWall, { thick: 0.04 })
+  nRUpper.position.set(0.3, 3.85, 0)
+  const nRRoofMesh = kit.drawn(gable(5.6, 1.35, 4.4), nRRoof, { thick: 0.04 })
+  nRRoofMesh.position.set(0.3, 5.15, 0)
+  const nREave = kit.drawn(box(6.4, 0.2, 4.8), nRRoof, { thick: 0.03 })
+  nREave.position.set(0, 2.85, 0)
+  // Rooftop TV aerial antenna
+  const antPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.6, 6), ink)
+  antPole.position.set(0.3, 6.4, 0)
+  const antCross = new THREE.Mesh(box(0.8, 0.02, 0.02), ink)
+  antCross.position.set(0.3, 6.7, 0)
+  const antCross2 = new THREE.Mesh(box(0.6, 0.02, 0.02), ink)
+  antCross2.position.set(0.3, 6.9, 0)
+  neighborRight.add(nRGround, nRUpper, nRRoofMesh, nREave, antPole, antCross, antCross2)
+  neighborRight.position.set(14.0, 0, -12.5)
+  neighborRight.rotation.y = 0.15
+  root.add(neighborRight)
+
+  // 3. Kasukabe distant suburban backdrop silhouettes
+  const backdrop = new THREE.Group()
+  backdrop.position.set(0, 0, -18.5)
+  const dHouses = [
+    { x: -5.5, w: 4.8, h: 4.2, rColor: mix(palette.blue, palette.yellow, 0.38) },
+    { x: 1.5, w: 5.2, h: 4.6, rColor: mix(palette.red, palette.yellow, 0.35) },
+    { x: 8.5, w: 4.5, h: 4.0, rColor: palette.blue },
+  ]
+  for (const dh of dHouses) {
+    const bgHouse = kit.drawn(box(dh.w, dh.h, 2.2), cream, { thick: 0.03 })
+    bgHouse.position.set(dh.x, dh.h / 2, 0)
+    const bgRoof = kit.drawn(gable(dh.w + 0.6, 1.2, 2.6), kit.fill(dh.rColor), { thick: 0.035 })
+    bgRoof.position.set(dh.x, dh.h + 0.6, 0)
+    backdrop.add(bgHouse, bgRoof)
+  }
+  const backFence = kit.drawn(box(28, 1.3, 0.15), wallGrey, { thick: 0.03 })
+  backFence.position.set(0, 0.65, 1.5)
+  backdrop.add(backFence)
+  root.add(backdrop)
+
   let seed = 11
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
   for (let i = 0; i < 8; i++) {

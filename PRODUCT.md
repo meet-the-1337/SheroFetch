@@ -30,7 +30,7 @@ English for menus, labels and errors. Shero himself talks in Hinglish: "Shero, g
 ## Constraints
 
 - Invite only. No open sign-up; the owner hands out and revokes codes.
-- Shero is an original mascot. No art, logo, characters or music from the cartoon that inspired him; nods live in the style and the jokes.
+- Visual Aesthetic & Homage: Authentic 1990s Kasukabe manga architectural and character homage (procedurally generated low-poly 3D in Three.js with custom hand-drawn crayon shaders, celebrating Yoshito Usui's classic style). Procedural models faithfully capture the iconic residence (tatami room, chabudai table, Chocobi snack box, Action Kamen CRT TV, Shiro doghouse with food bowl, engawa veranda, buri-buri boogie, and watagashi animations).
 - Formats are described honestly: FLAC is lossless only when Soulseek finds a real lossless file; otherwise it is converted from YouTube audio.
 - Either machine can be asleep or offline; the interface says so plainly instead of hiding it.
 - Anonymity: no personal identifiers anywhere in the site, the code or the commits. The public handle is meet-the-1337.
