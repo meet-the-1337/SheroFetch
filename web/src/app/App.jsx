@@ -3,10 +3,11 @@ import { supabase, rpc, emailFor, explainAuthError } from '../lib/supabase.js'
 import { hasBackend, FORMATS, savedFormat, saveFormat, PLAYLIST_RE } from '../lib/config.js'
 import { crayonize } from '../lib/covers.js'
 import { useSession, useJobs, useMachineLinks, useOnline, fileUrl, thumbUrl, machineName, fmtTime, parseLrc, loadLrc, explainFailure } from './data.js'
-import { usePlaylists, PlaylistCard, FailHelp, SavePicker } from './lists.jsx'
+import { usePlaylists, PlaylistCard, FailHelp } from './lists.jsx'
+import { Library, Cover, useAutoSave, PLACEHOLDER_ALBUMS } from './library.jsx'
 import { Devices, DeviceChoice, deviceChoiceMade, useMyDevices } from './devices.jsx'
 import { THEMES, getTheme, setTheme } from '../lib/theme.js'
-import { isNative, apiUrl, siteUrl, saveToPhone, savedPath, localSrc, phoneSongs, phoneIndex, audioName, readLocalText, outbox, setOutbox, addToOutbox, mirrorMedia, localArt } from '../lib/native.js'
+import { isNative, apiUrl, siteUrl, localSrc, phoneSongs, readLocalText, outbox, setOutbox, addToOutbox, mirrorMedia } from '../lib/native.js'
 
 const TABS = [['fetch', 'Fetch'], ['queue', 'Queue'], ['library', 'Library'], ['devices', 'Devices']]
 
@@ -28,8 +29,6 @@ export function App() {
   return <Shell profile={profile} />
 }
 
-// Album names the resolver or tagger uses when the real album is not known.
-const PLACEHOLDER_ALBUMS = ['Unknown Album', 'SheroFetch', 'Official Studio Release']
 
 function Center({ children }) {
   return <main className="center"><a className="wordmark" href={siteUrl('/')}>SheroFetch</a>{children}</main>
@@ -119,6 +118,7 @@ function Shell({ profile }) {
   const { jobs, state } = useJobs(profile.id)
   const links = useMachineLinks()
   const [playing, setPlaying] = useState(null)
+  useAutoSave(jobs, links)
   // Each tab is a history step, so the phone's back button returns to the previous tab before
   // it leaves the app.
   const go = (t) => { if (t !== tab) history.pushState(null, '', `#${t}`); setTab(t); scrollTo({ top: 0 }) }
@@ -358,89 +358,6 @@ function JobRow({ job }) {
   )
 }
 
-/* ------------------------------------------------------------------ library */
-
-// Where the file came from, said plainly, so a person can judge the copy they got.
-function sourceLabel(r) {
-  const s = String(r.source || '').toLowerCase()
-  if (s.includes('soulseek') || s.includes('p2p')) return r.ext === 'flac' ? 'From Soulseek, a real lossless rip' : 'From Soulseek, a 320 kbps rip'
-  if (s.includes('youtube') || s.includes('yt')) return r.ext === 'flac' ? 'From YouTube, converted to FLAC (not true lossless)' : 'From YouTube'
-  return ''
-}
-
-function Library({ jobs, state, links, onPlay, playing }) {
-  const [filter, setFilter] = useState('')
-  const [list, setList] = useState('all')
-  const [picking, setPicking] = useState(false)
-  const [saving, setSaving] = useState({})
-  const [onPhone, setOnPhone] = useState(() => new Map())
-  const [tick, bump] = useState(0)
-  const playlists = usePlaylists(jobs)
-  // Songs already in Music/SheroFetch, whether saved here or fetched by this phone as a server.
-  useEffect(() => { if (isNative) phoneIndex().then(setOnPhone) }, [tick, picking])
-  async function toPhone(j) {
-    setSaving((s) => ({ ...s, [j.id]: 0 }))
-    try {
-      await saveToPhone({ ...j, lrc: await loadLrc(j) }, { file: fileUrl(j, links, 'file', true), cover: fileUrl(j, links, 'cover') }, (p) => setSaving((s) => ({ ...s, [j.id]: p })))
-      setSaving((s) => { const n = { ...s }; delete n[j.id]; return n })
-      bump((n) => n + 1)
-    } catch (err) {
-      setSaving((s) => ({ ...s, [j.id]: String(err?.message || err) }))
-    }
-  }
-  const done = useMemo(() => jobs.filter((j) => j.status === 'done' && j.kind === 'track'), [jobs])
-  const inList = list === 'all' ? null : list === 'single' ? (j) => !j.parent_id : (j) => j.parent_id === list
-  const shown = done.filter((j) => (!inList || inList(j)) && `${j.result?.track} ${j.result?.artist} ${j.result?.album}`.toLowerCase().includes(filter.toLowerCase()))
-  const withSongs = playlists.filter((p) => p.kids.some((k) => k.status === 'done'))
-  if (state === 'loading') return <p className="muted">Loading your library…</p>
-  if (picking) return <SavePicker done={done} playlists={playlists} links={links} onClose={() => { setPicking(false); bump((n) => n + 1) }} />
-  return (
-    <section aria-labelledby="lib-title">
-      <div className="libhead">
-        <h1 id="lib-title">{done.length ? `${done.length} ${done.length === 1 ? 'song' : 'songs'} fetched` : 'No songs yet'}</h1>
-        {done.length > 4 && <input className="field field--small" type="search" placeholder="Filter" aria-label="Filter your songs" value={filter} onChange={(e) => setFilter(e.target.value)} />}
-        {done.length > 0 && <button className="btn btn--primary btn--big" type="button" onClick={() => setPicking(true)}>{isNative ? 'Save to phone' : 'Save to PC'}</button>}
-      </div>
-      {withSongs.length > 0 && (
-        <div className="chips" role="group" aria-label="Show">
-          {[['all', 'Everything'], ['single', 'Single songs'], ...withSongs.map((p) => [p.parent.id, `${p.name} (${p.kids.filter((k) => k.status === 'done').length})`])].map(([id, label]) => (
-            <button key={id} type="button" aria-pressed={list === id} onClick={() => setList(id)}>{label}</button>
-          ))}
-        </div>
-      )}
-      {!done.length && <p className="muted">Fetched songs land here, ready to play or save.</p>}
-      <ol className="rows">
-        {shown.map((j) => {
-          const local = isNative ? savedPath(j.id) || onPhone.get(audioName(j.result || {})) || null : null
-          const src = local ? localSrc(local) : fileUrl(j, links)
-          const cover = thumbUrl(j, links)
-          const r = j.result || {}
-          const s = saving[j.id]
-          return (
-            <li key={j.id} className={`row row--done${playing?.id === j.id ? ' is-playing' : ''}`}>
-              <Cover remote={cover} path={local} />
-              <div className="row__main"><b>{r.track}</b><span>{r.artist}{r.album && !PLACEHOLDER_ALBUMS.includes(r.album) ? `, ${r.album}` : ''}</span></div>
-              <div className="row__state">
-                <span>{r.ext?.toUpperCase()} {r.size_mb ? `${r.size_mb} MB` : ''}{r.ext === 'flac' && !r.lossless_source ? ', converted' : ''}</span>
-                {!src && <span className="muted">The {machineName(j.worker_id)} holding it is asleep</span>}
-                {j.result?.source && <span className="muted small">{sourceLabel(j.result)}</span>}
-                {local && <span className="muted">On this phone, in Music/SheroFetch</span>}
-                {typeof s === 'number' && <progress max="100" value={Math.round(s * 100)} aria-label={`Saving, ${Math.round(s * 100)} percent`} />}
-                {typeof s === 'string' && <span role="alert">Could not save: {s}</span>}
-              </div>
-              <button className="btn btn--quiet act-play" type="button" disabled={!src} onClick={() => onPlay(local ? { ...j, localSrc: src, localPath: local } : j)}>Play</button>
-              {isNative
-                ? <button className="btn btn--quiet act-save" type="button" disabled={!fileUrl(j, links) || typeof s === 'number'} onClick={() => toPhone(j)}>{local ? 'Save again' : typeof s === 'number' ? 'Saving…' : 'Save to phone'}</button>
-                : <a className={`btn btn--quiet act-save${src ? '' : ' is-off'}`} aria-disabled={!src} href={src ? fileUrl(j, links, 'file', true) : undefined}>Save</a>}
-              <button className="btn btn--ghost" type="button" aria-label={`Remove ${r.track} from this list`} onClick={() => rpc('forget_job', { p_job: j.id })}>Remove</button>
-            </li>
-          )
-        })}
-      </ol>
-    </section>
-  )
-}
-
 /* ------------------------------------------------------------------ player and lyrics */
 
 function Player({ job, links, onClose }) {
@@ -501,26 +418,6 @@ function Player({ job, links, onClose }) {
 }
 
 /** A song's cover: the machine's thumbnail, else the art inside the file on this phone, loaded once in view. */
-function Cover({ remote, path }) {
-  const ref = useRef(null)
-  const [src, setSrc] = useState(remote || null)
-  const [failed, setFailed] = useState(false)
-  useEffect(() => { setSrc(remote || null); setFailed(false) }, [remote])
-  useEffect(() => {
-    if ((src && !failed) || !path || !isNative) return undefined
-    let live = true
-    const io = new IntersectionObserver((es) => {
-      if (!es.some((e) => e.isIntersecting)) return
-      io.disconnect()
-      localArt(path).then((a) => { if (live && a) { setSrc(a); setFailed(false) } })
-    }, { rootMargin: '300px' })
-    if (ref.current) io.observe(ref.current)
-    return () => { live = false; io.disconnect() }
-  }, [src, failed, path])
-  if (!src || failed) return <span ref={ref} className="cover cover--none" aria-hidden="true" />
-  return <img className="cover" src={src} alt="" width="48" height="48" loading="lazy" onError={() => { if (src !== remote || !path) setSrc(null); setFailed(true) }} />
-}
-
 /* ------------------------------------------------------------------ the app with no signal */
 
 function Offline({ profile, signedIn, onBack }) {

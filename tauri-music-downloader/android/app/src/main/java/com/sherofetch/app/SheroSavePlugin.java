@@ -1,5 +1,6 @@
 package com.sherofetch.app;
 
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.MediaMetadataRetriever;
@@ -258,11 +259,41 @@ public class SheroSavePlugin extends Plugin {
             try (OutputStream os = new FileOutputStream(out)) {
                 os.write(call.getString("text", "").getBytes(StandardCharsets.UTF_8));
             }
+            // A playlist is indexed at once, so Poweramp and other players list it without a rescan.
+            if (out.getName().toLowerCase().matches(".*\\.m3u8?$")) scan(out);
             JSObject r = new JSObject();
             r.put("path", out.getAbsolutePath());
             call.resolve(r);
         } catch (Exception e) {
             call.reject(e.getMessage() == null ? "Writing failed" : e.getMessage());
+        }
+    }
+
+    /**
+     * Opens a song or playlist from the vault in another music app (Poweramp, the phone's own
+     * player...). Android asks which one, unless the person has picked a default.
+     */
+    @PluginMethod
+    public void open(PluginCall call) {
+        try {
+            File f = new File(call.getString("path", "")).getCanonicalFile();
+            File root = root().getCanonicalFile();
+            if (!f.getPath().startsWith(root.getPath() + File.separator) || !f.exists()) { call.reject("That file is not in Music/SheroFetch"); return; }
+            String name = f.getName().toLowerCase();
+            String type = name.matches(".*\\.m3u8?$") ? "audio/x-mpegurl" : "audio/*";
+            MediaScannerConnection.scanFile(getContext(), new String[] { f.getAbsolutePath() }, null, (p, uri) -> {
+                if (uri == null) { call.reject("Android has not indexed that file yet"); return; }
+                Intent view = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, type)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    getContext().startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    call.resolve();
+                } catch (Exception e) {
+                    call.reject("No music app on this phone can open it");
+                }
+            });
+        } catch (Exception e) {
+            call.reject(e.getMessage() == null ? "Could not open it" : e.getMessage());
         }
     }
 

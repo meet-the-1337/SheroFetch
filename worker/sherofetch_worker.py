@@ -476,6 +476,27 @@ class Vitals:
 VITALS = Vitals()
 
 
+async def tunnel_healthy(url: str) -> bool:
+    """True when the tunnel answers from the internet. A brand-new quick-tunnel name is often
+    looked up before Cloudflare has published it, and this machine's resolver then remembers
+    "not found" for a long while (worst after waking from sleep). So when the local lookup fails,
+    ask Cloudflare's DNS directly and connect to that address, keeping the real name for TLS."""
+    host = url.split("://", 1)[-1].split("/", 1)[0]
+    async with httpx.AsyncClient(timeout=8) as c:
+        try:
+            return (await c.get(f"{url}/health")).is_success
+        except httpx.ConnectError:
+            pass
+        r = await c.get("https://1.1.1.1/dns-query", params={"name": host, "type": "A"},
+                        headers={"accept": "application/dns-json"})
+        ips = [a["data"] for a in r.json().get("Answer", []) if a.get("type") == 1]
+        if not ips:
+            return False
+        resp = await c.get(f"https://{ips[0]}/health", headers={"host": host},
+                           extensions={"sni_hostname": host})
+        return resp.is_success
+
+
 async def local_backend_up() -> bool:
     try:
         async with httpx.AsyncClient(timeout=2) as c:
@@ -773,8 +794,7 @@ async def heartbeat() -> None:
             tunnel_ok = None
             if url:
                 try:
-                    async with httpx.AsyncClient(timeout=8) as c:
-                        tunnel_ok = (await c.get(f"{url}/health")).is_success
+                    tunnel_ok = await tunnel_healthy(url)
                 except Exception:  # noqa: BLE001
                     tunnel_ok = False
                 tunnel_fail = 0 if tunnel_ok else tunnel_fail + 1

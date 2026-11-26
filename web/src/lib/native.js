@@ -128,3 +128,23 @@ export function localArt(path) {
   if (!artCache.has(path)) artCache.set(path, SheroSave.art({ path, size: 160 }).then((r) => (r.path ? Capacitor.convertFileSrc(r.path) : null)).catch(() => null))
   return artCache.get(path)
 }
+
+/* ---------- other music apps ---------- */
+
+/** Opens a song or playlist from Music/SheroFetch in Poweramp or whichever player the person picks. */
+export const openInPlayer = (path) => (SheroSave ? SheroSave.open({ path }) : Promise.reject(new Error('Only in the app')))
+
+/**
+ * Writes Music/SheroFetch/Playlists/<name>.m3u8 pointing at songs already on the phone (by their
+ * real paths, so songs this phone fetched itself are included). Returns the playlist's path.
+ */
+export async function writeJam(name, songs) {
+  const rel = (p) => { const i = p.indexOf('/SheroFetch/'); return i < 0 ? null : `../${p.slice(i + '/SheroFetch/'.length)}` }
+  const lines = ['#EXTM3U', `#PLAYLIST:${name}`]
+  for (const s of songs) {
+    const r = rel(s.path)
+    if (r) lines.push(`#EXTINF:${Math.round(s.duration || -1)},${s.artist || ''} - ${s.track || ''}`, r)
+  }
+  const { path } = await SheroSave.writeText({ path: `Playlists/${safeName(name, 'Jam')}.m3u8`, text: `${lines.join('\n')}\n` })
+  return path
+}
