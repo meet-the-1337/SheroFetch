@@ -46,12 +46,13 @@ function useTags(songs) {
     let live = true
     const merge = (rows) => live && rows?.length && setTags((m) => { const n = new Map(m); rows.forEach((t) => n.set(t.key, t)); return n })
     ;(async () => {
+      // Songs with a Gemini answer are done; iTunes-only ones are asked again once per session.
       const have = new Set()
-      for (let i = 0; i < keys.length; i += 100) {
-        const { data } = await supabase.from('song_tags').select('key, genre, mood, language, energy, tagged_by').in('key', keys.slice(i, i + 100))
-        data?.forEach((t) => have.add(t.key))
+      try {
+        const data = await rpc('get_song_tags', { p_keys: keys })
+        data?.forEach((t) => { if (t.tagged_by === 'gemini') have.add(t.key) })
         merge(data)
-      }
+      } catch { /* tags are a nice-to-have */ }
       const missing = songs.filter((s) => { const k = tagKey(s.r.artist, s.r.track); return !have.has(k) && !asked.has(k) })
       if (!missing.length) return
       missing.forEach((s) => asked.add(tagKey(s.r.artist, s.r.track)))
@@ -216,12 +217,12 @@ export function Library({ jobs, state, links, onPlay, playing }) {
   async function saveAll(list) {
     for (const s of list) if (!s.local && fileUrl(s.j, links)) await saveOne(s.j, links)
   }
-  async function makeJam(name, list) {
+  async function makeJam(name, list, quiet = false) {
     const paths = list.filter((s) => s.local)
     if (!paths.length) { setNote('Save these songs to the phone first; a playlist can only point at songs that are on it.'); return null }
     try {
       const path = await writeJam(name, paths.map((s) => ({ path: s.local, duration: s.r.duration, artist: s.r.artist, track: s.r.track })))
-      setNote(`Made “${name}” with ${paths.length} ${paths.length === 1 ? 'song' : 'songs'}. Poweramp lists it under Playlists.`)
+      if (!quiet) setNote(`Made “${name}” with ${paths.length} ${paths.length === 1 ? 'song' : 'songs'}. Poweramp lists it under Playlists.`)
       return path
     } catch (e) { setNote(`Could not write the playlist: ${e?.message || e}`); return null }
   }
@@ -234,10 +235,10 @@ export function Library({ jobs, state, links, onPlay, playing }) {
     <section className="lib" aria-labelledby="lib-title">
       <div className="lib__head">
         <div>
-          <h1 id="lib-title">{done.length ? `${done.length} ${done.length === 1 ? 'song' : 'songs'}` : 'No songs yet'}</h1>
-          {isNative && done.length > 0 && <p className="muted small">{onPhoneCount} on this phone, in Music/SheroFetch</p>}
+          <h1 id="lib-title">{done.length ? 'Your library' : 'No songs yet'}</h1>
+          {done.length > 0 && <p className="muted small">{done.length} {done.length === 1 ? 'song' : 'songs'}{isNative ? `, ${onPhoneCount} on this phone` : ''}</p>}
         </div>
-        {done.length > 0 && <button className="btn btn--primary btn--big" type="button" onClick={() => setPicking(true)}>{isNative ? 'Save songs to phone' : 'Save songs to PC'}</button>}
+        {done.length > 0 && <button className="btn btn--primary" type="button" onClick={() => setPicking(true)}>{isNative ? 'Save to phone' : 'Save to PC'}</button>}
       </div>
 
       {done.length > 0 && (
@@ -254,9 +255,9 @@ export function Library({ jobs, state, links, onPlay, playing }) {
             })}
           </nav>
           {isNative && (
-            <label className="switch">
+            <label className="autosave">
               <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); setAutoSave(e.target.checked) }} />
-              <span>Save new songs to this phone by themselves</span>
+              <span>Save new songs to this phone automatically</span>
             </label>
           )}
         </div>
@@ -291,7 +292,7 @@ export function Library({ jobs, state, links, onPlay, playing }) {
           </div>
         ) : cat !== 'songs' ? (
           <>
-            {cat === 'playlists' && <Jams songs={songs} playlists={groups} makeJam={makeJam} />}
+            {cat === 'playlists' && <Jams songs={songs} playlists={groups} makeJam={makeJam} done={(n) => setNote(n ? `Made ${n} ${n === 1 ? 'playlist' : 'playlists'} in Music/SheroFetch/Playlists. Poweramp lists them under Playlists.` : 'No playlists made: save some songs to the phone first.')} />}
             {groups.length ? (
               <div className="tiles">
                 {groups.map((g) => <Tile key={g.name} g={g} kind={ONE[cat]} q={needle} links={links} onOpen={() => openIt(cat, g.name)} />)}
@@ -346,29 +347,31 @@ function SongRow({ s, q, links, saving, playing, onPlay, onSave }) {
   const { j, r, local, tags } = s
   const remote = fileUrl(j, links)
   const src = local ? localSrc(local) : remote
-  const chips = [tags?.genre, cap(tags?.mood), r.ext?.toUpperCase()].filter(Boolean)
+  const busy = typeof saving === 'number'
+  // Second line, as music apps write it: artist, then the genre and the file type.
+  const extra = [tags?.genre, r.ext?.toUpperCase()].filter(Boolean).join(', ')
   return (
-    <li className={`row row--song${playing ? ' is-playing' : ''}`}>
-      <Cover remote={thumbUrl(j, links)} path={local} />
-      <div className="row__main">
-        <b><Hl text={r.track} q={q} /></b>
-        <span><Hl text={r.artist} q={q} />{r.album && !PLACEHOLDER_ALBUMS.includes(r.album) ? <>, <Hl text={r.album} q={q} /></> : ''}</span>
-        <span className="tags">{chips.map((c) => <i key={c}>{c}</i>)}{r.size_mb ? <i>{r.size_mb} MB</i> : null}</span>
-        {typeof saving === 'number' && <progress max="100" value={Math.round(saving * 100)} aria-label={`Saving, ${Math.round(saving * 100)} percent`} />}
-        {typeof saving === 'string' && <span role="alert" className="err">Could not save: {saving}</span>}
-        {!src && <span className="muted">The {machineName(j.worker_id)} holding it is asleep</span>}
-      </div>
-      <button className="iconbtn" type="button" disabled={!src} aria-label={`Check ${r.track}`} title="Check it is the right song" onClick={() => onPlay(local ? { ...j, localSrc: src, localPath: local } : j)}>
+    <li className={`row row--song${playing ? ' is-playing' : ''}${local ? ' is-local' : ''}`}>
+      <button className="row__cover" type="button" disabled={!src} aria-label={`Check ${r.track}`} title="Play it to check it is the right song" onClick={() => onPlay(local ? { ...j, localSrc: src, localPath: local } : j)}>
+        <Cover remote={thumbUrl(j, links)} path={local} />
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" /></svg>
       </button>
+      <div className="row__main">
+        <b><Hl text={r.track} q={q} /></b>
+        <span><Hl text={r.artist} q={q} />{extra && <em>, {extra}</em>}</span>
+        {busy && <progress max="100" value={Math.round(saving * 100)} aria-label={`Saving, ${Math.round(saving * 100)} percent`} />}
+        {typeof saving === 'string' && <span role="alert" className="err">Could not save: {saving}</span>}
+        {!src && <span className="muted small">The {machineName(j.worker_id)} holding it is asleep</span>}
+      </div>
       {isNative
         ? local
-          ? <button className="btn btn--seal" type="button" onClick={() => openInPlayer(local).catch(() => {})}>Open</button>
-          : <button className="btn btn--primary" type="button" disabled={!remote || typeof saving === 'number'} onClick={onSave}>{typeof saving === 'number' ? 'Saving…' : 'Save'}</button>
-        : <a className={`btn btn--primary${src ? '' : ' is-off'}`} aria-disabled={!src} href={src ? fileUrl(j, links, 'file', true) : undefined}>Download</a>}
+          ? <button className="pill pill--open" type="button" onClick={() => openInPlayer(local).catch(() => {})}>Open</button>
+          : <button className="pill pill--save" type="button" disabled={!remote || busy} onClick={onSave}>{busy ? `${Math.round(saving * 100)}%` : 'Save'}</button>
+        : <a className={`pill pill--save${src ? '' : ' is-off'}`} aria-disabled={!src} href={src ? fileUrl(j, links, 'file', true) : undefined}>Download</a>}
       <details className="more">
-        <summary className="iconbtn" aria-label={`More for ${r.track}`}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg></summary>
+        <summary className="iconbtn" aria-label={`More for ${r.track}`}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg></summary>
         <div className="more__menu">
+          <p className="more__info">{[r.album && !PLACEHOLDER_ALBUMS.includes(r.album) ? r.album : null, tags?.mood && cap(tags.mood), tags?.language, r.size_mb && `${r.size_mb} MB`].filter(Boolean).join(', ')}</p>
           {isNative && local && remote && <button type="button" onClick={onSave}>Save again</button>}
           <button type="button" onClick={() => rpc('forget_job', { p_job: j.id })}>Remove from this list</button>
         </div>
@@ -385,7 +388,7 @@ const shuffle = (a) => { const x = a.slice(); for (let i = x.length - 1; i > 0; 
  * Playlist files that point at songs already on the phone: nothing is downloaded again. Each
  * fetched playlist, every mood and genre with three songs or more, plus a random jam.
  */
-function Jams({ songs, playlists, makeJam }) {
+function Jams({ songs, playlists, makeJam, done }) {
   const [busy, setBusy] = useState(false)
   const [made, setMade] = useState([])
   const local = songs.filter((s) => s.local)
@@ -401,8 +404,9 @@ function Jams({ songs, playlists, makeJam }) {
     if (fresh.length >= 3) out.push(['Fresh this week', fresh])
     if (local.length >= 3) out.push(['Shero Jam', shuffle(local).slice(0, 40)])
     const ok = []
-    for (const [name, list] of out) if (await makeJam(name, list)) ok.push([name, list.filter((s) => s.local).length])
+    for (const [name, list] of out) if (await makeJam(name, list, true)) ok.push([name, list.filter((s) => s.local).length])
     setMade(ok)
+    done(ok.length)
     setBusy(false)
   }
   return (
